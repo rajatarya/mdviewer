@@ -8,14 +8,20 @@ pub fn run() {
 }
 
 use pulldown_cmark::{Parser, Options, html::push_html};
+use ammonia::Builder;
 
 pub fn render_markdown(markdown: &str) -> String {
     let mut options = Options::empty();
     options.insert(Options::ENABLE_GFM);
     let parser = Parser::new_ext(markdown, options);
-    let mut html = String::new();
-    push_html(&mut html, parser);
-    html
+    let mut unsafe_html = String::new();
+    push_html(&mut unsafe_html, parser);
+    
+    // Sanitize HTML to prevent XSS
+    Builder::new()
+        .rm_tags(&["script"])
+        .clean(&unsafe_html)
+        .to_string()
 }
 
 #[cfg(test)]
@@ -34,5 +40,12 @@ mod tests {
         let input = "```mermaid\ngraph TD;\n    A-->B;\n```";
         let expected = "<pre><code class=\"language-mermaid\">graph TD;\n    A--&gt;B;\n</code></pre>\n";
         assert_eq!(render_markdown(input), expected);
+    }
+
+    #[test]
+    fn it_sanitizes_xss() {
+        let input = "<script>alert('xss')</script>";
+        let output = render_markdown(input);
+        assert!(!output.contains("<script>"));
     }
 }
