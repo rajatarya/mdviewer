@@ -20,6 +20,7 @@ pub fn render_markdown(markdown: &str) -> String {
     // Sanitize HTML to prevent XSS
     Builder::new()
         .rm_tags(&["script"])
+        .add_tag_attributes("code", &["class"])
         .clean(&unsafe_html)
         .to_string()
 }
