@@ -28,4 +28,11 @@ mod tests {
         let expected = "<h1>Header</h1>\n";
         assert_eq!(render_markdown(input), expected);
     }
+
+    #[test]
+    fn it_renders_mermaid_fence() {
+        let input = "```mermaid\ngraph TD;\n    A-->B;\n```";
+        let expected = "<pre><code class=\"language-mermaid\">graph TD;\n    A--&gt;B;\n</code></pre>\n";
+        assert_eq!(render_markdown(input), expected);
+    }
 }
