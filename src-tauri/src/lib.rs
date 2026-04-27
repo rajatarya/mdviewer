@@ -1,9 +1,26 @@
 // Markdown rendering core
 
 use pulldown_cmark::{Parser, Options, html::push_html};
+use tauri::command;
+
+mod commands {
+    use super::*;
+    
+    #[command]
+    pub fn render_md(markdown: &str) -> String {
+        render_markdown(markdown)
+    }
+    
+    #[command]
+    pub fn extract_fm(markdown: &str) -> (String, String) {
+        extract_frontmatter(markdown)
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .invoke_handler(tauri::generate_handler![commands::render_md, commands::extract_fm])
         .setup(|_app| Ok(()))
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
