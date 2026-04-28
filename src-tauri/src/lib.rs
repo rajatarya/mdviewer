@@ -1,7 +1,7 @@
 // Markdown rendering core
 
 use pulldown_cmark::{html::push_html, Options, Parser};
-use tauri::{command, Manager};
+use tauri::{command, Manager, RunEvent};
 use tauri_plugin_cli::CliExt;
 
 mod commands {
@@ -183,6 +183,41 @@ mod commands {
     }
 }
 
+// ─── macOS / iOS Document Open Plugin ────────────────────────────────────────
+
+/// Plugin that handles macOS/iOS "open file" events (double-click in Finder,
+/// `open file.md` from terminal, dock badge, etc.). Stores paths in CliPaths
+/// state so the frontend can load them.
+#[cfg(any(target_os = "macos", target_os = "ios"))]
+fn open_file_plugin<R: tauri::Runtime>() -> tauri::plugin::TauriPlugin<R> {
+    tauri::plugin::Builder::new("mdviewer-open-file")
+        .on_event(|app, event| {
+            if let RunEvent::Opened { urls } = event {
+                let paths = app.state::<commands::CliPaths>();
+                let mut paths = paths.0.lock().unwrap();
+                paths.clear();
+                for url in urls {
+                    if let Ok(path) = url.to_file_path() {
+                        let path_str = path.to_string_lossy().into_owned();
+                        if commands::is_md_file(&path_str) {
+                            paths.push(path_str);
+                        }
+                    }
+                }
+                if !paths.is_empty() {
+                    eprintln!("[mdviewer] Opened via OS: {:?}", paths);
+                }
+            }
+        })
+        .build()
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "ios")))]
+fn open_file_plugin<R: tauri::Runtime>() -> tauri::plugin::TauriPlugin<R> {
+    // No-op on non-macOS/iOS platforms
+    tauri::plugin::Builder::new("mdviewer-open-file").build()
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let paths = commands::CliPaths(std::sync::Mutex::new(Vec::new()));
@@ -191,6 +226,7 @@ pub fn run() {
         .manage(paths)
         .plugin(tauri_plugin_cli::init())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(open_file_plugin())
         .setup(|app| commands::init_cli_paths(app))
         .invoke_handler(tauri::generate_handler![
             commands::render_md,

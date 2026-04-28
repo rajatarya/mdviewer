@@ -573,16 +573,33 @@
     preview.innerHTML = `<div style="padding:2em;text-align:center;color:red"><h3>⚠️ Error</h3><p>${msg}</p></div>`;
   }
 
-  // Startup: check for CLI file paths and auto-load
+  // Startup: check for CLI file paths and auto-load.
+  // Also polls for paths that arrive after init (e.g. macOS "open file" event
+  // fires after the webview has loaded). Stops polling once a file is loaded.
+  let _pollingStopped = false;
   async function init() {
     try {
       const cliPaths = await invoke('get_cli_paths');
       if (cliPaths.length > 0) {
         await loadFile(cliPaths[0]);
+        _pollingStopped = true;
       }
     } catch (_) {
       // No CLI args or error — show placeholder
     }
+    // Poll for paths that arrive after init (macOS Opened event)
+    const poll = async () => {
+      if (_pollingStopped) return;
+      try {
+        const cliPaths = await invoke('get_cli_paths');
+        if (cliPaths.length > 0) {
+          await loadFile(cliPaths[0]);
+          _pollingStopped = true;
+        }
+      } catch (_) {}
+      setTimeout(poll, 500);
+    };
+    poll();
   }
 
 
