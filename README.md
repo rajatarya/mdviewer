@@ -17,6 +17,7 @@
   <a href="#installation"><strong>Installation</strong></a> ·
   <a href="#usage"><strong>Usage</strong></a> ·
   <a href="#development"><strong>Development</strong></a> ·
+  <a href="#contributing"><strong>Contributing</strong></a> ·
   <a href="#colophon"><strong>Colophon</strong></a>
 </p>
 
@@ -133,9 +134,15 @@ See [DESIGN.md](DESIGN.md) for the full architecture and rendering pipeline.
 
 ---
 
+## Contributing
+
+Forks and issues are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md) for details. We encourage personal forks and bug reports, and discourage blind AI-generated PRs.
+
+---
+
 ## Colophon
 
-This app was designed and implemented entirely by **[pi.dev](https://pi.dev)** — an AI coding agent — using the **Qwen3.6-35B-A3B-GGUF:BF16** model ([🤗 Hugging Face](https://huggingface.co/unsloth/Qwen3.6-35B-A3B-GGUF)).
+This app was designed and implemented entirely by **[pi.dev](https://pi.dev)** — an AI coding agent — using the **Qwen3.6-35B-A3B-GGUF:BF16** model by [Unsloth](http://unsloth.ai/) ([🤗 Hugging Face](https://huggingface.co/unsloth/Qwen3.6-35B-A3B-GGUF)).
 
 Every line of Rust, every CSS rule, every JavaScript function was written through conversation with the agent. The result: a complete, tested, production-ready native macOS app — from zero to shipped — without a single human typing code.
 
