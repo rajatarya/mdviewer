@@ -1,15 +1,38 @@
-# Build artifacts
-/target/
+# --- Binaries & Build Artifacts ------------------------------------------------
+target/
+/target/                      # cargo build output (both workspace root & src-tauri/)
 
-# IDE
+# --- NPM / Node ---------------------------------------------------------------
+node_modules/
+pkg-lock*.json
+pnpm*
+yarn.lock
+yarn-error.log
+
+# --- IDE -----------------------------------------------------------------------
 .idea/
-.vscode/
+.vscode/*.json                # settings you might want to track; ignore launch configs
+.vscode/settings.json         # local machine-specific paths etc.
 *.swp
 *.swo
 
-# OS
+# --- Taurica / App Bundles -----------------------------------------------------
+dist                          # frontendDist built by tauri build
+src-tauri/debug               # macOS debug info directory
+release_builds/
+debug_bundle/
+
+# --- Editor Backup Fragments ---------------------------------------------------
+*~
+[Oo]bj
+
+# --- Environment & Local Config -----------------------------------------------
+.env                       
+
+# --- Misc / Platform Noise ----------------------------------------------------
 .DS_Store
 Thumbs.db
+ehthumbs.db
 
-# pi superpowers
+# --- pi superpowers ------------------------------------------------------------
 .pi/superpowers-state.json
