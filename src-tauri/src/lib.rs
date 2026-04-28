@@ -24,6 +24,9 @@ mod commands {
     pub struct CliPaths(pub Mutex<Vec<String>>);
 
     /// Read CLI args and store markdown file paths in state.
+    /// Only updates state if CLI args actually contain file paths —
+    /// this preserves paths set by the `Opened` event handler (macOS
+    /// double-click in Finder) which fires before setup runs.
     pub fn init_cli_paths(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
         let matches = app.cli().matches()?;
 
@@ -42,11 +45,11 @@ mod commands {
             .unwrap_or_default();
 
         if !paths.is_empty() {
-            eprintln!("[mdviewer] Opening: {:?}", paths);
+            eprintln!("[mdviewer] Opening from CLI: {:?}", paths);
+            let state = app.state::<CliPaths>();
+            *state.0.lock().unwrap() = paths;
         }
 
-        let state = app.state::<CliPaths>();
-        *state.0.lock().unwrap() = paths;
         Ok(())
     }
 
