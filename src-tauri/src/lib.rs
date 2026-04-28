@@ -23,7 +23,6 @@ mod commands {
     #[derive(Default)]
     pub struct CliPaths(pub Mutex<Vec<String>>);
 
-    // A command to return CLI file paths so JS can load them on startup.
     /// Read CLI args and store markdown file paths in state.
     pub fn init_cli_paths(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
         let matches = app.cli().matches()?;

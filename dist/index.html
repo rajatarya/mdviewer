@@ -363,7 +363,8 @@
 <input type="file" id="file-input" accept=".md,.markdown,.txt" style="display:none">
 
 <script>
-  const { invoke, listen } = window.__TAURI__.core;
+  const { invoke } = window.__TAURI__.core;
+  const { listen } = window.__TAURI__.event;
 
   const preview = document.getElementById('preview');
   const filenameEl = document.getElementById('filename');
