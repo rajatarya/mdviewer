@@ -144,6 +144,8 @@ Forks and issues are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md) for deta
 
 This app was designed and implemented entirely by **[pi.dev](https://pi.dev)** — an AI coding agent — using the **Qwen3.6-35B-A3B-GGUF:BF16** model by [Unsloth](http://unsloth.ai/) ([🤗 Hugging Face](https://huggingface.co/unsloth/Qwen3.6-35B-A3B-GGUF)).
 
+The model was hosted locally via [llama.cpp](https://github.com/ggml-org/llama.cpp) on an M5 MacBook Pro (128 GB RAM), with the GGUF weights downloaded directly from Hugging Face.
+
 Every line of Rust, every CSS rule, every JavaScript function was written through conversation with the agent. The result: a complete, tested, production-ready native macOS app — from zero to shipped — without a single human typing code.
 
 **Stack:** Tauri 2 · Rust · pulldown-cmark · ammonia · KaTeX · Mermaid.js
