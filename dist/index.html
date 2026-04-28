@@ -409,7 +409,11 @@
   openBtn.addEventListener('click', async () => {
     const { open } = window.__TAURI__.dialog;
     const selected = await open({ multiple: false, filters: [{ name: 'Markdown', extensions: ['md', 'markdown', 'txt'] }] });
-    if (selected) await loadFile(selected);
+    if (selected) {
+      // Tauri 2 returns { path: string } on desktop
+      const filePath = typeof selected === 'object' ? selected.path : selected;
+      if (filePath) await loadFile(filePath);
+    }
   });
 
   // File input fallback
@@ -421,20 +425,14 @@
     }
   });
 
-  // Drag & drop from Finder
+  // Drag & drop from Finder — uses FileReader API since webview files have no .path
   document.addEventListener('dragover', (e) => { e.preventDefault(); });
   document.addEventListener('drop', async (e) => {
     e.preventDefault();
     const file = e.dataTransfer?.files?.[0];
     if (file && (file.name.endsWith('.md') || file.name.endsWith('.markdown') || file.name.endsWith('.txt'))) {
-      // For drag-drop, try to read from the actual path first for watching
-      const path = file.path; // Tauri provides real filesystem path on desktop
-      if (path) {
-        await loadFile(path);
-      } else {
-        const content = await file.text();
-        await renderMarkdown(content, file.name);
-      }
+      const content = await file.text();
+      await renderMarkdown(content, file.name);
     }
   });
 
