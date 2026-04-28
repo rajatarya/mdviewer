@@ -307,13 +307,6 @@
     padding: 0.5em 0;
   }
 
-  /* Mermaid */
-  .mermaid {
-    text-align: center;
-    margin: 1em 0;
-    overflow-x: auto;
-  }
-
   /* Scrollbar */
   ::-webkit-scrollbar { width: 8px; height: 8px; }
   ::-webkit-scrollbar-track { background: transparent; }
@@ -520,7 +513,7 @@
       preview.innerHTML = html;
 
       // Render Mermaid diagrams (Task 12 - already integrated)
-      const mermaidBlocks = preview.querySelectorAll('.mermaid');
+      const mermaidBlocks = preview.querySelectorAll('pre code.language-mermaid');
       for (const block of mermaidBlocks) {
         try {
           const { svg } = await mermaid.render('mermaid-' + Date.now(), block.textContent);
