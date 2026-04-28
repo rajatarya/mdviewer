@@ -50,8 +50,17 @@
 ### Option 1: Download (macOS)
 
 1. Go to the [Releases](https://github.com/rajatarya/mdviewer/releases) page
-2. Download the latest `.dmg` or `.zip`
-3. Open and drag to Applications
+2. Download the latest `.dmg` (Apple Silicon)
+3. Open the `.dmg` and drag **Markdown Viewer** to Applications
+4. **First launch**: macOS may show "app is damaged" or won't open due to quarantine. Run:
+
+   ```bash
+   xattr -cr /Applications/Markdown\ Viewer.app
+   ```
+
+   Then launch normally. This removes the quarantine attribute — a standard macOS security step for unsigned apps.
+
+> **Tested on**: macOS 26.4 (25E246) on Apple Silicon (M-series).
 
 ### Option 2: Build from Source
 
