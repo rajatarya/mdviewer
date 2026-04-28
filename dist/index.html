@@ -458,22 +458,31 @@
 
   /** Task 15: Export current content as a standalone HTML file. */
   exportBtn.addEventListener('click', async () => {
+    console.log('Export button clicked, currentContent:', currentContent ? 'set' : 'null');
     if (!currentContent) return;
     try {
       const title = filenameEl.textContent || 'export';
-      // Use Tauri save dialog to get output path
-      const { save } = window.__TAURI__.dialog;
-      const outputPath = await save({ filters: [{ name: 'HTML', extensions: ['html'] }] });
+      console.log('Calling dialog save with title:', title);
+      // Use Tauri 2.x dialog plugin via invoke
+      // In Tauri 2.x, plugin commands use the format "plugin:<name>|<command>"
+      const outputPath = await invoke('plugin:dialog|save', {
+        options: {
+          title: 'Export HTML',
+          filters: [{ name: 'HTML', extensions: ['html'] }],
+          defaultPath: title + '.html',
+        },
+      });
       if (!outputPath) return; // user cancelled
       await invoke('export_html', {
         content: currentContent,
-        output_path: outputPath,
+        outputPath: outputPath,
         title: title,
       });
       preview.innerHTML = `<p style="color:green">✅ Exported to ${outputPath.split('/').pop()}</p>`;
       setTimeout(() => doRender(currentContent), 1500);
     } catch (err) {
       console.error('Export failed:', err);
+      preview.innerHTML = `<p style="color:red">Export failed: ${err}</p>`;
     }
   });
 
@@ -512,6 +521,7 @@
   /** Render markdown content to the preview panel (drag-drop / file picker). */
   async function renderMarkdown(content, path) {
     currentFilePath = null; // not from disk path, no watching
+    currentContent = content; // needed for export
     filenameEl.textContent = path ? path.split('/').pop() : '';
 
     // Switch toolbar to file mode

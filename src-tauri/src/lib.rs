@@ -190,6 +190,7 @@ pub fn run() {
     tauri::Builder::default()
         .manage(paths)
         .plugin(tauri_plugin_cli::init())
+        .plugin(tauri_plugin_dialog::init())
         .setup(|app| commands::init_cli_paths(app))
         .invoke_handler(tauri::generate_handler![
             commands::render_md,
@@ -718,7 +719,8 @@ mod tests {
     /// users (regression guard for the "Command renderMd not found" bug).
     #[test]
     fn test_frontend_invokes_match_backend_commands() {
-        // The set of all commands registered via generate_handler! in run().
+        // The set of all commands registered via generate_handler! in run()
+        // plus commands from plugins (tauri-plugin-dialog provides dialog_save, etc.).
         let registered: std::collections::HashSet<&str> = [
             "render_md",
             "extract_fm",
@@ -726,6 +728,10 @@ mod tests {
             "watch_file",
             "export_html",
             "get_cli_paths",
+            // plugin-provided commands (format: "plugin:<namespace>|<command>")
+            "plugin:dialog|save",
+            "plugin:dialog|open",
+            "plugin:dialog|message",
         ]
         .into_iter()
         .collect();
@@ -739,7 +745,8 @@ mod tests {
         )
         .expect("dist/index.html must exist");
 
-        let re = regex::Regex::new(r#"invoke\s*\(\s*['"]([a-zA-Z_][a-zA-Z0-9_]*)['"]"#).unwrap();
+        // Match both snake_case custom commands and plugin:namespace|command format
+        let re = regex::Regex::new(r#"invoke\s*\(\s*['"]([^'"]+)['"]"#).unwrap();
         let frontend_calls: std::collections::HashSet<&str> = re
             .captures_iter(&html)
             .filter_map(|c| c.get(1))
@@ -762,6 +769,73 @@ mod tests {
             mismatches,
             registered,
             frontend_calls,
+        );
+    }
+
+    /// Verify that every custom command's invoke() call uses camelCase argument keys,
+    /// matching Tauri 2.x's automatic Rust snake_case → camelCase serialization.
+    /// Prevents regressions like `output_path` instead of `outputPath`.
+    #[test]
+    fn test_frontend_invoke_args_are_camelcase() {
+        let html = std::fs::read_to_string(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .parent()
+                .unwrap()
+                .join("dist/index.html"),
+        )
+        .expect("dist/index.html must exist");
+
+        // Flatten multi-line invoke calls into a single line for regex matching.
+        let flat = html.replace('\n', " ").replace('\r', "");
+
+        // Match: invoke('commandName', { ... })
+        let invoke_re =
+            regex::Regex::new(r#"invoke\s*\(\s*['"]([^'"]+)['"]\s*,\s*\{([^}]+)\}"#).unwrap();
+
+        let custom_commands: std::collections::HashSet<&str> = [
+            "render_md",
+            "extract_fm",
+            "read_file",
+            "watch_file",
+            "export_html",
+            "get_cli_paths",
+        ]
+        .into_iter()
+        .collect();
+
+        let mut errors = Vec::new();
+
+        for cap in invoke_re.captures_iter(&flat) {
+            let cmd = cap.get(1).unwrap().as_str();
+
+            // Only check custom commands (not plugin:namespace|command)
+            if !custom_commands.contains(cmd) {
+                continue;
+            }
+
+            let args_str = cap.get(2).unwrap().as_str();
+
+            // Extract argument keys (handles "key: value" patterns)
+            let key_re = regex::Regex::new(r#"([a-zA-Z_][a-zA-Z0-9_]*)\s*:"#).unwrap();
+
+            for key_cap in key_re.captures_iter(args_str) {
+                let key = key_cap.get(1).unwrap().as_str();
+                if key.contains('_') {
+                    errors.push(format!(
+                        "Command '{}' has snake_case arg key '{}'. Tauri 2.x expects camelCase '{}'.",
+                        cmd,
+                        key,
+                        key.replace('_', "")
+                    ));
+                }
+            }
+        }
+
+        assert!(
+            errors.is_empty(),
+            "Frontend invoke() calls use snake_case argument keys, but Tauri 2.x serializes\n\
+             Rust snake_case params as camelCase. Fix the frontend invoke() calls:\n\n{}",
+            errors.join("\n")
         );
     }
 }
