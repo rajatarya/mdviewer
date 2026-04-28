@@ -107,10 +107,11 @@
 
   .toolbar .filename {
     flex: 2;
-    font-size: 13px;
+    font-size: 15px;
+    font-weight: 500;
     color: var(--text);
-    opacity: 0.6;
-    text-align: center;
+    opacity: 0.8;
+    text-align: left;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -338,14 +339,16 @@
   .no-file .icon { font-size: 48px; margin-bottom: 16px; }
   .no-file .message { font-size: 16px; }
   .no-file .hint { font-size: 13px; margin-top: 8px; opacity: 0.7; }
+
+  /* Toolbar — hide/show based on whether a file is loaded */
 </style>
 </head>
 <body>
 
 <div class="toolbar">
   <button id="open-btn" title="Open file">📂 Open</button>
-  <span class="filename" id="filename"></span>
-  <span class="title">Markdown Viewer</span>
+  <span class="filename" id="filename" style="display:none"></span>
+  <span class="title" id="app-title">Markdown Viewer</span>
   <button id="export-btn" title="Export as HTML" style="display:none">💾 Export</button>
   <button id="theme-btn" title="Toggle theme">🌙</button>
 </div>
@@ -438,6 +441,12 @@
       filenameEl.textContent = displayPath;
       preview.innerHTML = '<div class="loading">Rendering...</div>';
 
+      // Switch toolbar to file mode
+      openBtn.style.display = 'none';
+      filenameEl.style.display = 'inline';
+      document.getElementById('app-title').style.display = 'none';
+      exportBtn.style.display = 'inline';
+
       // Start file watching for live updates (Task 14)
       startWatching(filePath, content);
 
@@ -500,10 +509,17 @@
     window.__mdviewer_watch_cleanup = () => clearInterval(intervalId);
   }
 
-  /** Render markdown content to the preview panel. */
+  /** Render markdown content to the preview panel (drag-drop / file picker). */
   async function renderMarkdown(content, path) {
     currentFilePath = null; // not from disk path, no watching
     filenameEl.textContent = path ? path.split('/').pop() : '';
+
+    // Switch toolbar to file mode
+    openBtn.style.display = 'none';
+    filenameEl.style.display = 'inline';
+    document.getElementById('app-title').style.display = 'none';
+    exportBtn.style.display = 'inline';
+
     await doRender(content);
   }
 
