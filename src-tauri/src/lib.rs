@@ -1,7 +1,7 @@
 // Markdown rendering core
 
 use pulldown_cmark::{html::push_html, Options, Parser};
-use tauri::command;
+use tauri::{command, Manager};
 
 mod commands {
     use super::*;
@@ -9,7 +9,18 @@ mod commands {
     use std::hash::{Hash, Hasher};
     use std::sync::atomic::AtomicBool;
     use std::sync::Arc;
+    use std::sync::Mutex;
     use tauri::Emitter;
+
+    /// Managed state: CLI file paths to open on startup.
+    #[derive(Default)]
+    pub struct CliPaths(pub Mutex<Vec<String>>);
+
+    // A command to return CLI file paths so JS can load them on startup.
+    #[command]
+    pub fn get_cli_paths(app: tauri::AppHandle) -> Vec<String> {
+        app.state::<CliPaths>().0.lock().unwrap().clone()
+    }
 
     #[command]
     pub fn render_md(markdown: &str) -> String {
@@ -140,14 +151,18 @@ mod commands {
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
-pub fn run() {
+pub fn run(cli_paths: Vec<String>) {
+    let paths = commands::CliPaths(std::sync::Mutex::new(cli_paths));
+
     tauri::Builder::default()
+        .manage(paths)
         .invoke_handler(tauri::generate_handler![
             commands::render_md,
             commands::extract_fm,
             commands::read_file,
             commands::watch_file,
             commands::export_html,
+            commands::get_cli_paths,
         ])
         .setup(|_app| Ok(()))
         .run(tauri::generate_context!())
@@ -358,16 +373,36 @@ fn preprocess_wikilinks(markdown: &str) -> String {
 
 // ─── Main Rendering Pipeline ─────────────────────────────────────────────────
 
-/// Render markdown string to sanitized HTML
+/// Render markdown string to sanitized HTML.
+/// Code fenced sections are extracted first via placeholders to prevent
+/// downstream preproccessors (wikilinks etc.) from corrupting their content.
 pub fn render_markdown(markdown: &str) -> String {
-    // 1. Preprocess math (do first, before anything else)
-    let with_math = preprocess_math(markdown);
+    // Phase 0 — Extract fenced blocks so regex preprocessors don't alter code.
+    let fence_re = Regex::new(r"(?s)```[^\n`]*\n.*?```").unwrap();
+    let mut fence_blocks: Vec<String> = Vec::new();
+    let without_fences = fence_re
+        .replace_all(markdown, |caps: &regex::Captures| {
+            let idx = fence_blocks.len();
+            fence_blocks.push(caps[0].to_string());
+            format!("\x00FENCED_BLOCK_{}\x00", idx)
+        })
+        .into_owned();
+
+    // 1. Preprocess math
+    let with_math = preprocess_math(&without_fences);
     // 2. Preprocess emojis
     let with_emojis = preprocess_emojis(&with_math);
     // 3. Preprocess wikilinks
     let with_wikilinks = preprocess_wikilinks(&with_emojis);
     // 4. Preprocess callouts
-    let with_callouts = preprocess_callouts(&with_wikilinks);
+    let mut with_callouts = preprocess_callouts(&with_wikilinks);
+
+    // Restore fenced blocks before markdown parsing.
+    for (idx, block) in fence_blocks.iter().enumerate() {
+        let placeholder = format!("\x00FENCED_BLOCK_{}\x00", idx);
+        with_callouts = with_callouts.replace(&placeholder, block);
+    }
+
     // 5. Parse markdown
     let mut options = Options::empty();
     options.insert(Options::ENABLE_GFM);

@@ -405,23 +405,22 @@
     localStorage.setItem('mdviewer-theme', next);
   });
 
-  // Open file dialog (uses OS-native file picker via Tauri)
-  openBtn.addEventListener('click', async () => {
-    const { open } = window.__TAURI__.dialog;
-    const selected = await open({ multiple: false, filters: [{ name: 'Markdown', extensions: ['md', 'markdown', 'txt'] }] });
-    if (selected) {
-      // Tauri 2 returns { path: string } on desktop
-      const filePath = typeof selected === 'object' ? selected.path : selected;
-      if (filePath) await loadFile(filePath);
-    }
+  // Open file — use hidden <input type="file"> for reliable cross-platform picking
+  openBtn.addEventListener('click', () => {
+    fileInput.click();
   });
 
   // File input fallback
   fileInput.addEventListener('change', async (e) => {
     const file = e.target.files?.[0];
     if (file) {
-      const content = await file.text();
-      await renderMarkdown(content, file.name);
+      try {
+        const content = await file.text();
+        preview.innerHTML = '<div class="loading">Rendering...</div>';
+        await renderMarkdown(content, file.name);
+      } catch (err) {
+        preview.innerHTML = `<p style="color:red">Error reading file: ${err}</p>`;
+      }
     }
   });
 
@@ -549,6 +548,26 @@
       preview.innerHTML = `<p style="color:red">Error: ${err}</p>`;
     }
   }
+
+  function showError(msg) {
+    preview.innerHTML = `<div style="padding:2em;text-align:center;color:red"><h3>⚠️ Error</h3><p>${msg}</p></div>`;
+  }
+
+  // Startup: check for CLI file paths and auto-load
+  async function init() {
+    try {
+      const cliPaths = await invoke('get_cli_paths');
+      if (cliPaths.length > 0) {
+        await loadFile(cliPaths[0]);
+      }
+    } catch (_) {
+      // No CLI args or error — show placeholder
+    }
+  }
+
+
+
+  init();
 </script>
 </body>
 </html>
