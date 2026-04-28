@@ -353,6 +353,7 @@
   <button id="open-btn" title="Open file">📂 Open</button>
   <span class="filename" id="filename"></span>
   <span class="title">Markdown Viewer</span>
+  <button id="export-btn" title="Export as HTML" style="display:none">💾 Export</button>
   <button id="theme-btn" title="Toggle theme">🌙</button>
 </div>
 
@@ -369,16 +370,19 @@
 <input type="file" id="file-input" accept=".md,.markdown,.txt" style="display:none">
 
 <script>
-  const { invoke } = window.__TAURI__.core;
+  const { invoke, listen } = window.__TAURI__.core;
 
   const preview = document.getElementById('preview');
-  const filename = document.getElementById('filename');
+  const filenameEl = document.getElementById('filename');
+  const exportBtn = document.getElementById('export-btn');
   const themeBtn = document.getElementById('theme-btn');
   const openBtn = document.getElementById('open-btn');
   const fileInput = document.getElementById('file-input');
 
-  let currentFile = null;
+  let currentContent = null;
+  let currentFilePath = null; // tracks the on-disk path for live watching
   let renderTimeout = null;
+  let watchStopCallback = null; // if we implement stop_watch later
 
   // Initialize Mermaid
   mermaid.initialize({
@@ -401,12 +405,14 @@
     localStorage.setItem('mdviewer-theme', next);
   });
 
-  // Open file dialog
-  openBtn.addEventListener('click', () => {
-    fileInput.click();
+  // Open file dialog (uses OS-native file picker via Tauri)
+  openBtn.addEventListener('click', async () => {
+    const { open } = window.__TAURI__.dialog;
+    const selected = await open({ multiple: false, filters: [{ name: 'Markdown', extensions: ['md', 'markdown', 'txt'] }] });
+    if (selected) await loadFile(selected);
   });
 
-  // File input
+  // File input fallback
   fileInput.addEventListener('change', async (e) => {
     const file = e.target.files?.[0];
     if (file) {
@@ -415,26 +421,108 @@
     }
   });
 
-  // Drag & drop
+  // Drag & drop from Finder
   document.addEventListener('dragover', (e) => { e.preventDefault(); });
   document.addEventListener('drop', async (e) => {
     e.preventDefault();
     const file = e.dataTransfer?.files?.[0];
     if (file && (file.name.endsWith('.md') || file.name.endsWith('.markdown') || file.name.endsWith('.txt'))) {
-      const content = await file.text();
-      await renderMarkdown(content, file.name);
+      // For drag-drop, try to read from the actual path first for watching
+      const path = file.path; // Tauri provides real filesystem path on desktop
+      if (path) {
+        await loadFile(path);
+      } else {
+        const content = await file.text();
+        await renderMarkdown(content, file.name);
+      }
     }
   });
 
-  async function renderMarkdown(content, path) {
-    filename.textContent = path ? path.split('/').pop() : '';
-    preview.innerHTML = '<div class="loading">Rendering...</div>';
+  /** Load a file from disk path and start watching it. */
+  async function loadFile(filePath) {
+    try {
+      currentFilePath = filePath;
+      const content = await invoke('read_file', { path: filePath });
+      const displayPath = filePath.split('/').pop();
+      filenameEl.textContent = displayPath;
+      preview.innerHTML = '<div class="loading">Rendering...</div>';
 
+      // Start file watching for live updates (Task 14)
+      startWatching(filePath, content);
+
+      await doRender(content);
+    } catch (err) {
+      preview.innerHTML = `<p style="color:red">Error: ${err}</p>`;
+    }
+  }
+
+  /** Task 15: Export current content as a standalone HTML file. */
+  exportBtn.addEventListener('click', async () => {
+    if (!currentContent) return;
+    try {
+      const title = filenameEl.textContent || 'export';
+      // Use Tauri save dialog to get output path
+      const { save } = window.__TAURI__.dialog;
+      const outputPath = await save({ filters: [{ name: 'HTML', extensions: ['html'] }] });
+      if (!outputPath) return; // user cancelled
+      await invoke('export_html', {
+        content: currentContent,
+        output_path: outputPath,
+        title: title,
+      });
+      preview.innerHTML = `<p style="color:green">✅ Exported to ${outputPath.split('/').pop()}</p>`;
+      setTimeout(() => doRender(currentContent), 1500);
+    } catch (err) {
+      console.error('Export failed:', err);
+    }
+  });
+
+  /** Listen for file-change events from the Rust backend. */
+  listen('mdviewer:file-changed', async (event) => {
+    const newContent = event.payload;
+    currentContent = newContent; // keep our copy in sync
+    await doRender(newContent);
+  });
+
+  /** Start background polling for file changes on the opened file. */
+  function startWatching(filePath, initialContent) {
+    // Note: In a full implementation we'd use notify + Tauri events.
+    // For now, we poll via invoke every few seconds — simpler and cross-platform.
+    currentContent = initialContent;
+
+    let lastHash = null;
+    const checkHash = async () => {
+      try {
+        const content = await invoke('read_file', { path: filePath });
+        // Simple diff detection
+        if (content !== currentContent) {
+          currentContent = content;
+          await doRender(content);
+        }
+      } catch (_) { /* file deleted or locked, ignore */ }
+    };
+
+    checkHash(); // initial check
+    const intervalId = setInterval(checkHash, 2000);
+
+    // Store cleanup function for when a new file is opened
+    window.__mdviewer_watch_cleanup = () => clearInterval(intervalId);
+  }
+
+  /** Render markdown content to the preview panel. */
+  async function renderMarkdown(content, path) {
+    currentFilePath = null; // not from disk path, no watching
+    filenameEl.textContent = path ? path.split('/').pop() : '';
+    await doRender(content);
+  }
+
+  /** Core rendering: parse markdown → render Mermaid/KaTeX. */
+  async function doRender(content) {
     try {
       const html = await invoke('render_md', { markdown: content });
       preview.innerHTML = html;
 
-      // Render Mermaid diagrams
+      // Render Mermaid diagrams (Task 12 - already integrated)
       const mermaidBlocks = preview.querySelectorAll('.mermaid');
       for (const block of mermaidBlocks) {
         try {
@@ -445,7 +533,7 @@
         }
       }
 
-      // Render KaTeX math
+      // Render KaTeX math (Task 13 - already integrated)
       try {
         await renderMathInElement(preview, {
           delimiters: [

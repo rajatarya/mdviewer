@@ -5,6 +5,11 @@ use tauri::command;
 
 mod commands {
     use super::*;
+    use std::collections::hash_map::DefaultHasher;
+    use std::hash::{Hash, Hasher};
+    use std::sync::atomic::AtomicBool;
+    use std::sync::Arc;
+    use tauri::Emitter;
 
     #[command]
     pub fn render_md(markdown: &str) -> String {
@@ -15,6 +20,123 @@ mod commands {
     pub fn extract_fm(markdown: &str) -> (String, String) {
         extract_frontmatter(markdown)
     }
+
+    /// Read a file and return its content.
+    #[command]
+    pub fn read_file(path: &str) -> Result<String, String> {
+        std::fs::read_to_string(path).map_err(|e| e.to_string())
+    }
+
+    /// Watch a file for changes. Spawns a background thread that emits
+    /// "mdviewer:file-changed" Tauri events with updated content when the file is modified.
+    /// Returns the initial file content.
+    #[command]
+    pub fn watch_file(path: &str, app_handle: tauri::AppHandle) -> Result<String, String> {
+        use std::path::PathBuf;
+
+        let path = PathBuf::from(path);
+        if !path.exists() {
+            return Err(format!("File not found: {}", path.display()));
+        }
+        let current = std::fs::read_to_string(&path)
+            .map_err(|e| format!("Failed to read {}: {}", path.display(), e))?;
+
+        // Compute initial content hash for dedup.
+        let content_hash = {
+            let mut s = DefaultHasher::new();
+            current.hash(&mut s);
+            s.finish()
+        };
+
+        let path_clone = path.clone();
+        let stopped = Arc::new(AtomicBool::new(false));
+        let app_handle_clone = app_handle.clone();
+
+        // Spawn a background watcher thread.
+        std::thread::spawn(move || {
+            use std::collections::hash_map::DefaultHasher;
+            use std::hash::{Hash, Hasher};
+            use std::sync::atomic::Ordering;
+            let mut last_hash = content_hash;
+
+            loop {
+                if stopped.load(Ordering::Relaxed) {
+                    break;
+                }
+                // Poll every 1s. On macOS, fsevents-based watchers work better but
+                // polling is simpler and cross-platform.
+                std::thread::sleep(std::time::Duration::from_millis(1000));
+
+                match std::fs::read_to_string(&path_clone) {
+                    Ok(new_content) => {
+                        let mut s = DefaultHasher::new();
+                        new_content.hash(&mut s);
+                        let h = s.finish();
+                        if h != last_hash {
+                            last_hash = h;
+                            // Emit event to frontend with the updated content.
+                            let _ = app_handle_clone.emit("mdviewer:file-changed", &new_content);
+                        }
+                    }
+                    Err(_) => {
+                        // File was deleted or renamed — stop watching.
+                        break;
+                    }
+                }
+            }
+        });
+
+        Ok(current)
+    }
+
+    /// Export rendered markdown as a standalone HTML file.
+    #[command]
+    pub fn export_html(content: &str, output_path: &str, title: &str) -> Result<(), String> {
+        let html = render_markdown(content);
+        let full_html = format!(
+            r#"<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{title}</title>
+<style>
+  body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+    max-width: 800px; margin: 0 auto; padding: 32px 24px; line-height: 1.6;
+    color: #1a1a1a; background: #fff; }}
+  h1, h2 {{ border-bottom: 1px solid #e0e0e0; padding-bottom: 0.3em; }}
+  code {{ background: #f6f8fa; padding: 0.2em 0.4em; border-radius: 3px; font-size: 0.875em;
+    font-family: 'SFMono-Regular', Consolas, monospace; }}
+  pre {{ background: #f6f8fa; padding: 16px; border-radius: 6px; overflow-x: auto; }}
+  pre code {{ background: none; padding: 0; }}
+  table {{ border-collapse: collapse; width: 100%; }}
+  th, td {{ border: 1px solid #e0e0e0; padding: 6px 13px; }}
+  th {{ background: #f6f8fa; }}
+  blockquote {{ border-left: 0.25em solid #e0e0e0; padding-left: 1em; color: #666; }}
+  a {{ color: #0366d6; text-decoration: none; }}
+  a:hover {{ text-decoration: underline; }}
+  .callout {{ margin: 1em 0; padding: 1em; border-radius: 6px; border-left: 4px solid; }}
+  .callout.note {{ background: #dbeafe; border-color: #3b82f6; }}
+  .callout.tip {{ background: #d1fae5; border-color: #10b981; }}
+  .callout.warning {{ background: #fef3c7; border-color: #f59e0b; }}
+  .callout.caution {{ background: #fee2e2; border-color: #ef4444; }}
+  .callout.important {{ background: #ede9fe; border-color: #8b5cf6; }}
+  .math-inline {{ color: #0366d6; }}
+  .mermaid {{ text-align: center; }}
+  img {{ max-width: 100%; }}
+</style>
+</head>
+<body>
+{html}
+</body>
+</html>"#,
+            title = title,
+            html = html
+        );
+        std::fs::write(output_path, full_html)
+            .map_err(|e| format!("Failed to write {}: {}", output_path, e))?;
+        Ok(())
+    }
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -22,7 +144,10 @@ pub fn run() {
     tauri::Builder::default()
         .invoke_handler(tauri::generate_handler![
             commands::render_md,
-            commands::extract_fm
+            commands::extract_fm,
+            commands::read_file,
+            commands::watch_file,
+            commands::export_html,
         ])
         .setup(|_app| Ok(()))
         .run(tauri::generate_context!())
@@ -428,5 +553,66 @@ mod tests {
         let (fm, content) = extract_frontmatter(input);
         assert!(fm.is_empty());
         assert_eq!(content, "# No frontmatter");
+    }
+
+    // ─── Task 14: File watching ─────────────────────────────────────────────────
+
+    #[test]
+    fn test_read_file_success() {
+        let dir = std::env::temp_dir().join("mdviewer_test_read");
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("test.md");
+        std::fs::write(&path, "# Hello World").unwrap();
+        let content = commands::read_file(path.to_str().unwrap()).unwrap();
+        assert_eq!(content, "# Hello World");
+        let err = commands::read_file("/nonexistent/file.md");
+        assert!(err.is_err());
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    // ─── Task 15: Export ────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_export_html_basic() {
+        let dir = std::env::temp_dir().join("mdviewer_test_export");
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("export.html");
+        let content = "---\ntitle: Test Doc\n---\n# Hello\n\n**bold** and *italic*.";
+        let result = commands::export_html(content, path.to_str().unwrap(), "Test Doc");
+        assert!(result.is_ok());
+        let exported = std::fs::read_to_string(&path).unwrap();
+        assert!(exported.contains("<!DOCTYPE html>"));
+        assert!(exported.contains("<title>Test Doc</title>"));
+        assert!(exported.contains("<h1>Hello</h1>"));
+        assert!(exported.contains("<strong>bold</strong>"));
+        assert!(exported.contains("<em>italic</em>"));
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn test_export_html_with_callouts() {
+        let dir = std::env::temp_dir().join("mdviewer_test_export2");
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("export_callouts.html");
+        let content = "> [!NOTE]\n> This is a note";
+        let result = commands::export_html(content, path.to_str().unwrap(), "Callouts");
+        assert!(result.is_ok());
+        let exported = std::fs::read_to_string(&path).unwrap();
+        assert!(exported.contains("callout note"));
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn test_export_html_with_math() {
+        let dir = std::env::temp_dir().join("mdviewer_test_export3");
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("export_math.html");
+        let content = "Use $E=mc^2$ for energy.";
+        let result = commands::export_html(content, path.to_str().unwrap(), "Math Doc");
+        assert!(result.is_ok());
+        let exported = std::fs::read_to_string(&path).unwrap();
+        assert!(exported.contains("E=mc^2"));
+        assert!(exported.contains("math-inline"));
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 }
