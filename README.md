@@ -55,7 +55,7 @@
 ### Option 2: Build from Source
 
 **Prerequisites:**
-- Rust 1.70+ (`rustup`)
+- Rust 1.94+ stable (`rustup`)
 - Node.js 18+ (for Tauri CLI)
 - Xcode Command Line Tools
 
@@ -135,7 +135,7 @@ See [DESIGN.md](DESIGN.md) for the full architecture and rendering pipeline.
 
 ## Colophon
 
-This app was designed and implemented entirely by **[pi.dev](https://pi.dev)** — an AI coding agent — using the **Qwen3.6-35B-A3B-GGUF:BF16** model.
+This app was designed and implemented entirely by **[pi.dev](https://pi.dev)** — an AI coding agent — using the **Qwen3.6-35B-A3B-GGUF:BF16** model ([🤗 Hugging Face](https://huggingface.co/unsloth/Qwen3.6-35B-A3B-GGUF)).
 
 Every line of Rust, every CSS rule, every JavaScript function was written through conversation with the agent. The result: a complete, tested, production-ready native macOS app — from zero to shipped — without a single human typing code.
 
