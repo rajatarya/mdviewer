@@ -2,6 +2,7 @@
 
 use pulldown_cmark::{html::push_html, Options, Parser};
 use tauri::{command, Manager};
+use tauri_plugin_cli::CliExt;
 
 mod commands {
     use super::*;
@@ -12,11 +13,44 @@ mod commands {
     use std::sync::Mutex;
     use tauri::Emitter;
 
+    /// Check whether a path looks like a markdown/text file.
+    pub fn is_md_file(path: &str) -> bool {
+        let lower = path.to_lowercase();
+        lower.ends_with(".md") || lower.ends_with(".markdown") || lower.ends_with(".txt")
+    }
+
     /// Managed state: CLI file paths to open on startup.
     #[derive(Default)]
     pub struct CliPaths(pub Mutex<Vec<String>>);
 
     // A command to return CLI file paths so JS can load them on startup.
+    /// Read CLI args and store markdown file paths in state.
+    pub fn init_cli_paths(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
+        let matches = app.cli().matches()?;
+
+        let paths: Vec<String> = matches
+            .args
+            .get("files")
+            .map(|arg| {
+                arg.value
+                    .as_array()
+                    .into_iter()
+                    .flat_map(|arr| arr.iter().filter_map(|v| v.as_str()))
+                    .filter(|p| is_md_file(p))
+                    .map(String::from)
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        if !paths.is_empty() {
+            eprintln!("[mdviewer] Opening: {:?}", paths);
+        }
+
+        let state = app.state::<CliPaths>();
+        *state.0.lock().unwrap() = paths;
+        Ok(())
+    }
+
     #[command]
     pub fn get_cli_paths(app: tauri::AppHandle) -> Vec<String> {
         app.state::<CliPaths>().0.lock().unwrap().clone()
@@ -151,11 +185,13 @@ mod commands {
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
-pub fn run(cli_paths: Vec<String>) {
-    let paths = commands::CliPaths(std::sync::Mutex::new(cli_paths));
+pub fn run() {
+    let paths = commands::CliPaths(std::sync::Mutex::new(Vec::new()));
 
     tauri::Builder::default()
         .manage(paths)
+        .plugin(tauri_plugin_cli::init())
+        .setup(|app| commands::init_cli_paths(app))
         .invoke_handler(tauri::generate_handler![
             commands::render_md,
             commands::extract_fm,
@@ -164,7 +200,6 @@ pub fn run(cli_paths: Vec<String>) {
             commands::export_html,
             commands::get_cli_paths,
         ])
-        .setup(|_app| Ok(()))
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
@@ -638,6 +673,32 @@ mod tests {
     }
 
     #[test]
+    fn test_is_md_file_accepts_md() {
+        assert!(commands::is_md_file("test.md"));
+    }
+
+    #[test]
+    fn test_is_md_file_accepts_markdown() {
+        assert!(commands::is_md_file("doc.markdown"));
+    }
+
+    #[test]
+    fn test_is_md_file_accepts_txt() {
+        assert!(commands::is_md_file("readme.txt"));
+    }
+
+    #[test]
+    fn test_is_md_file_rejects_html() {
+        assert!(!commands::is_md_file("page.html"));
+    }
+
+    #[test]
+    fn test_is_md_file_case_insensitive() {
+        assert!(commands::is_md_file("FILE.MD"));
+        assert!(commands::is_md_file("file.TXT"));
+    }
+
+    #[test]
     fn test_export_html_with_math() {
         let dir = std::env::temp_dir().join("mdviewer_test_export3");
         std::fs::create_dir_all(&dir).unwrap();
@@ -649,5 +710,59 @@ mod tests {
         assert!(exported.contains("E=mc^2"));
         assert!(exported.contains("math-inline"));
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    // ─── Task 16: Frontend-backend command name consistency ─────────────────────
+
+    /// Verify that every invoke() call in the frontend HTML matches a registered
+    /// backend command. Catches camelCase/snake_case mismatches before they reach
+    /// users (regression guard for the "Command renderMd not found" bug).
+    #[test]
+    fn test_frontend_invokes_match_backend_commands() {
+        // The set of all commands registered via generate_handler! in run().
+        let registered: std::collections::HashSet<&str> = [
+            "render_md",
+            "extract_fm",
+            "read_file",
+            "watch_file",
+            "export_html",
+            "get_cli_paths",
+        ]
+        .into_iter()
+        .collect();
+
+        // Read the frontend HTML and extract all invoke('...') calls.
+        let html = std::fs::read_to_string(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .parent()
+                .unwrap()
+                .join("dist/index.html"),
+        )
+        .expect("dist/index.html must exist");
+
+        let re = regex::Regex::new(r#"invoke\s*\(\s*['"]([a-zA-Z_][a-zA-Z0-9_]*)['"]"#).unwrap();
+        let frontend_calls: std::collections::HashSet<&str> = re
+            .captures_iter(&html)
+            .filter_map(|c| c.get(1))
+            .map(|m| m.as_str())
+            .collect();
+
+        let mut mismatches = Vec::new();
+        for cmd in &frontend_calls {
+            if !registered.contains(cmd) {
+                mismatches.push(*cmd);
+            }
+        }
+
+        assert!(
+            mismatches.is_empty(),
+            "Frontend invokes unknown commands: {:?}.\n\n\
+             Registered backend commands: {:?}\n\
+             Frontend calls: {:?}\n\n\
+             Fix: ensure frontend invoke() names match backend #[command] function names (snake_case).",
+            mismatches,
+            registered,
+            frontend_calls,
+        );
     }
 }
