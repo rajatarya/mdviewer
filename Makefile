@@ -20,16 +20,17 @@ release:
 bundle:
 	cd src-tauri && cargo tauri build
 
-# Install the bundled app to ~/Applications
+# Install the bundled app to ~/Applications and create CLI symlink
 install: bundle
-	cp -R target/release/bundle/macos/*.app ~/Applications/
-	xattr -dr com.apple.quarantine ~/Applications/*.app 2>/dev/null || true
-	@echo "Installed to ~/Applications/"
+	./bin/install.sh
 
-# Set as default app for .md files (requires: brew install duti)
-default: install
-	duti -s app.mdviewer .md all
-	@echo "Markdown Viewer is now the default for .md files"
+# Install without rebuilding (use after a fresh bundle)
+install-fast:
+	./bin/install.sh --no-build
+
+# Uninstall: remove symlink and file associations
+uninstall:
+	./bin/install.sh --uninstall
 
 # Run the Tauri app (requires Tauri CLI)
 run:

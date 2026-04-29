@@ -77,11 +77,15 @@ cd mdviewer
 # Install Tauri CLI
 npm install -g @tauri-apps/cli
 
-# Build the app
-cargo tauri build
+# Build and install (copies .app to ~/Applications, creates ~/.local/bin/mdviewer symlink)
+make install
 ```
 
-The app bundle will be at `src-tauri/target/release/bundle/macos/Markdown Viewer.app`.
+Or install without rebuilding (after a fresh bundle):
+
+```bash
+make install-fast
+```
 
 ---
 
