@@ -35,7 +35,7 @@ fail()  { echo -e "${RED}[install]${NC} $*" >&2; exit 1; }
 # ── Uninstall ─────────────────────────────────────────────────────────────────
 
 do_uninstall() {
-    info "Removing symlink: ${BIN_DIR}/mdviewer"
+    info "Removing wrapper: ${BIN_DIR}/mdviewer"
     rm -f "${BIN_DIR}/mdviewer"
 
     info "Removing file associations for ${APP_NAME}"
@@ -61,11 +61,10 @@ do_install() {
         make bundle
     fi
 
-    # 2. Find the .app bundle
+    # 2. Find the .app bundle (Tauri builds to workspace root, not src-tauri/)
     local bundle_path
-    bundle_path=$(find src-tauri/target/release/bundle/macos -name "${APP_BUNDLE}" -type d 2>/dev/null | head -1)
+    bundle_path=$(find target/release/bundle/macos -name "${APP_BUNDLE}" -type d 2>/dev/null | head -1)
     [ -n "$bundle_path" ] || fail "No ${APP_BUNDLE} found. Run 'make bundle' first."
-    [ -d "$bundle_path" ] || fail "${bundle_path} is not a directory"
 
     info "Found bundle: ${bundle_path}"
 
@@ -77,10 +76,46 @@ do_install() {
     # 4. Remove quarantine attribute (needed for macOS Gatekeeper)
     xattr -dr com.apple.quarantine "${APPS_DIR}/${APP_BUNDLE}" 2>/dev/null || true
 
-    # 5. Create symlink in ~/.local/bin
+    # 5. Create wrapper script in ~/.local/bin
+    # .app bundles are directories, so we use a small wrapper that calls 'open'.
+    # Intercepts --help/-h so it prints help without launching the app.
     mkdir -p "$BIN_DIR"
-    info "Creating symlink: ${BIN_DIR}/mdviewer -> ${APPS_DIR}/${APP_BUNDLE}"
-    ln -sf "${APPS_DIR}/${APP_BUNDLE}" "${BIN_DIR}/mdviewer"
+    local wrapper="${BIN_DIR}/mdviewer"
+    info "Creating wrapper: ${wrapper}"
+    cat > "$wrapper" <<'WRAPPER'
+#!/usr/bin/env bash
+if [[ "$1" == "--help" || "$1" == "-h" ]]; then
+    cat <<'HELP'
+Markdown Viewer — A lightweight Markdown viewer for macOS
+
+USAGE:
+    mdviewer [FLAGS] [FILES...]
+
+FLAGS:
+    -h, --help       Print this help message and exit
+
+ARGS:
+    FILES    Markdown files to open (.md, .markdown, .txt)
+
+EXAMPLES:
+    mdviewer document.md
+    mdviewer doc1.md doc2.md notes.txt
+    mdviewer --help
+
+FEATURES:
+    GitHub Flavored Markdown: Tables, task lists, strikethrough, autolinks
+    Obsidian-style: Wikilinks [[Page]], emoji :rocket:, callouts [!NOTE]
+    Math: Inline $E=mc^2$ and display $$\int_0^\infty$$
+    Diagrams: Mermaid code blocks
+    Security: All HTML sanitized via ammonia — XSS-safe
+HELP
+    exit 0
+fi
+open -a "PLACEHOLDER_APP" -- "$@"
+WRAPPER
+    # Replace placeholder with actual app path
+    sed -i '' "s|PLACEHOLDER_APP|${APPS_DIR}/${APP_BUNDLE}|" "$wrapper"
+    chmod +x "$wrapper"
 
     # 6. Register file associations via LaunchServices
     info "Registering file associations (.md, .markdown, .txt)..."

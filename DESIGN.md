@@ -92,17 +92,17 @@ mdviewer --help
 1. **Builds** the app (`make bundle`), unless `--no-build` is passed
 2. **Copies** the `.app` to `~/Applications/`
 3. **Removes** the macOS quarantine attribute (`xattr -dr com.apple.quarantine`)
-4. **Creates** a symlink `~/.local/bin/mdviewer` → `~/Applications/Markdown Viewer.app`
+4. **Creates** a wrapper script `~/.local/bin/mdviewer` that calls `open -a` on the `.app`
 5. **Registers** file associations via `/usr/bin/lsregister`
 
 ```bash
 make install          # build + install
 make install-fast     # install from existing .app
-make uninstall        # remove symlink + file associations
+make uninstall        # remove wrapper + file associations
 ./bin/install.sh --help  # usage info
 ```
 
-The symlink enables `mdviewer` from any terminal. Users may need to add `~/.local/bin` to their `PATH` (most modern shells include it by default).
+The wrapper script intercepts `--help`/`-h` to print usage without launching the app, and passes all other arguments through to `open -a`. Users may need to add `~/.local/bin` to their `PATH` (most modern shells include it by default).
 
 ## Test Coverage
 - ✅ Header rendering

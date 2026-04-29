@@ -20,15 +20,16 @@ release:
 bundle:
 	cd src-tauri && cargo tauri build
 
-# Install the bundled app to ~/Applications and create CLI symlink
-install: bundle
+# Install the bundled app to ~/Applications and create CLI wrapper
+# (install.sh handles building if needed)
+install:
 	./bin/install.sh
 
 # Install without rebuilding (use after a fresh bundle)
 install-fast:
 	./bin/install.sh --no-build
 
-# Uninstall: remove symlink and file associations
+# Uninstall: remove wrapper and file associations
 uninstall:
 	./bin/install.sh --uninstall
 

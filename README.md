@@ -77,7 +77,7 @@ cd mdviewer
 # Install Tauri CLI
 npm install -g @tauri-apps/cli
 
-# Build and install (copies .app to ~/Applications, creates ~/.local/bin/mdviewer symlink)
+# Build and install (copies .app to ~/Applications, creates ~/.local/bin/mdviewer wrapper)
 make install
 ```
 
@@ -86,6 +86,9 @@ Or install without rebuilding (after a fresh bundle):
 ```bash
 make install-fast
 ```
+
+The wrapper script at `~/.local/bin/mdviewer` launches the `.app` with `open -a` and
+passes through any arguments. It also handles `--help` inline (no app launch needed).
 
 ---
 
