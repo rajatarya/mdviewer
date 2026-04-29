@@ -45,16 +45,9 @@
       "description": "A lightweight Markdown viewer",
       "args": [
         {
-          "name": "help",
-          "short": "h",
-          "long": "help",
-          "takes_value": false,
-          "help": "Print this help message and exit"
-        },
-        {
           "name": "files",
           "index": 1,
-          "takes_value": true,
+          "takesValue": true,
           "multiple": true,
           "required": false,
           "description": "Markdown files to open"
