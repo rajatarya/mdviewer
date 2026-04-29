@@ -96,6 +96,9 @@ mdviewer document.md
 # Open multiple files
 mdviewer doc1.md doc2.md notes.txt
 
+# Show help
+mdviewer --help
+
 # Pipe from stdin
 cat document.md | mdviewer -
 ```

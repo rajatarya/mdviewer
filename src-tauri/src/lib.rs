@@ -524,6 +524,41 @@ pub fn extract_frontmatter(markdown: &str) -> (String, String) {
     }
 }
 
+// ─── Help Message ─────────────────────────────────────────────────────────────
+
+/// Return the formatted help message for `mdviewer --help`.
+pub fn help_message() -> String {
+    r#"Markdown Viewer — A lightweight Markdown viewer for macOS
+
+USAGE:
+    mdviewer [FLAGS] [FILES...]
+
+FLAGS:
+    -h, --help       Print this help message and exit
+
+ARGS:
+    FILES    Markdown files to open (.md, .markdown, .txt)
+
+EXAMPLES:
+    mdviewer document.md
+    mdviewer doc1.md doc2.md notes.txt
+    mdviewer --help
+
+FEATURES:
+    GitHub Flavored Markdown: Tables, task lists, strikethrough, autolinks
+    Obsidian-style: Wikilinks [[Page]], emoji :rocket:, callouts [!NOTE]
+    Math: Inline $E=mc^2$ and display $$\int_0^\infty$$
+    Diagrams: Mermaid code blocks
+    Security: All HTML sanitized via ammonia — XSS-safe
+"#
+    .to_string()
+}
+
+/// Check if `--help` flag is present in command-line arguments.
+pub fn has_help_flag() -> bool {
+    std::env::args().any(|a| a == "--help" || a == "-h")
+}
+
 // ─── Tests ────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
@@ -809,6 +844,67 @@ mod tests {
             registered,
             frontend_calls,
         );
+    }
+
+    // ─── Task 17: CLI --help flag ─────────────────────────────────────────────────
+
+    #[test]
+    fn test_help_message_contains_usage() {
+        let msg = help_message();
+        assert!(msg.contains("USAGE:"));
+        assert!(msg.contains("mdviewer"));
+    }
+
+    #[test]
+    fn test_help_message_contains_flags() {
+        let msg = help_message();
+        assert!(msg.contains("--help"));
+        assert!(msg.contains("-h"));
+        assert!(msg.contains("Print this help"));
+    }
+
+    #[test]
+    fn test_help_message_contains_examples() {
+        let msg = help_message();
+        assert!(msg.contains("mdviewer document.md"));
+        assert!(msg.contains("mdviewer doc1.md doc2.md"));
+    }
+
+    #[test]
+    fn test_help_message_contains_features() {
+        let msg = help_message();
+        assert!(msg.contains("GitHub Flavored Markdown"));
+        assert!(msg.contains("Wikilinks"));
+        assert!(msg.contains("Math"));
+        assert!(msg.contains("Mermaid"));
+        assert!(msg.contains("XSS-safe"));
+    }
+
+    #[test]
+    fn test_help_message_contains_file_args() {
+        let msg = help_message();
+        assert!(msg.contains("FILES"));
+        assert!(msg.contains(".md"));
+        assert!(msg.contains(".markdown"));
+        assert!(msg.contains(".txt"));
+    }
+
+    #[test]
+    fn test_has_help_flag_detects_double_dash() {
+        let args: Vec<String> = vec!["mdviewer".into(), "--help".into()];
+        assert!(args.iter().any(|a| a == "--help" || a == "-h"));
+    }
+
+    #[test]
+    fn test_has_help_flag_detects_single_dash() {
+        let args: Vec<String> = vec!["mdviewer".into(), "-h".into(), "file.md".into()];
+        assert!(args.iter().any(|a| a == "--help" || a == "-h"));
+    }
+
+    #[test]
+    fn test_has_help_flag_not_present() {
+        let args: Vec<String> = vec!["mdviewer".into(), "file.md".into()];
+        assert!(!args.iter().any(|a| a == "--help" || a == "-h"));
     }
 
     /// Verify that every custom command's invoke() call uses camelCase argument keys,

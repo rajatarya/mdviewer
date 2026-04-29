@@ -67,18 +67,22 @@ let (frontmatter_json, content) = extract_frontmatter(md);
 
 ### CLI Support
 Uses `tauri-plugin-cli` (v2) for structured command-line argument parsing.
-Configured in `tauri.conf.json` under `plugins.cli` with a positional `files` argument.
+Configured in `tauri.conf.json` under `plugins.cli` with a `--help` flag and a
+positional `files` argument.
 
 **Flow:**
-1. Tauri CLI plugin parses args at startup
-2. `init_cli_paths()` extracts positional `files` args, filters for `.md`/`.markdown`/`.txt`
-3. Paths stored in `CliPaths` state
-4. Frontend calls `get_cli_paths` on init and auto-loads the first file
+1. `main.rs` checks for `--help` flag via `has_help_flag()` before app init
+2. If `--help` is present, prints formatted help message and exits (no window)
+3. Tauri CLI plugin parses remaining args at startup
+4. `init_cli_paths()` extracts positional `files` args, filters for `.md`/`.markdown`/`.txt`
+5. Paths stored in `CliPaths` state
+6. Frontend calls `get_cli_paths` on init and auto-loads the first file
 
 **Usage:**
 ```bash
 mdviewer path/to/file.md
 mdviewer doc1.md doc2.md
+mdviewer --help
 ```
 
 ## Test Coverage
