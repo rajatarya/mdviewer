@@ -368,6 +368,7 @@
 <script>
   const { invoke } = window.__TAURI__.core;
   const { listen } = window.__TAURI__.event;
+  const { getCurrent } = window.__TAURI__.window;
 
   const preview = document.getElementById('preview');
   const filenameEl = document.getElementById('filename');
@@ -439,6 +440,7 @@
       const content = await invoke('read_file', { path: filePath });
       const displayPath = filePath.split('/').pop();
       filenameEl.textContent = displayPath;
+      await setWindowTitle(displayPath);
       preview.innerHTML = '<div class="loading">Rendering...</div>';
 
       // Switch toolbar to file mode
@@ -458,11 +460,9 @@
 
   /** Task 15: Export current content as a standalone HTML file. */
   exportBtn.addEventListener('click', async () => {
-    console.log('Export button clicked, currentContent:', currentContent ? 'set' : 'null');
     if (!currentContent) return;
     try {
       const title = filenameEl.textContent || 'export';
-      console.log('Calling dialog save with title:', title);
       // Use Tauri 2.x dialog plugin via invoke
       // In Tauri 2.x, plugin commands use the format "plugin:<name>|<command>"
       const outputPath = await invoke('plugin:dialog|save', {
@@ -522,7 +522,9 @@
   async function renderMarkdown(content, path) {
     currentFilePath = null; // not from disk path, no watching
     currentContent = content; // needed for export
-    filenameEl.textContent = path ? path.split('/').pop() : '';
+    const displayPath = path ? path.split('/').pop() : '';
+    filenameEl.textContent = displayPath;
+    await setWindowTitle(displayPath);
 
     // Switch toolbar to file mode
     openBtn.style.display = 'none';
@@ -600,6 +602,24 @@
       setTimeout(poll, 500);
     };
     poll();
+  }
+
+  // Listen for new windows created by the Opened event handler.
+  // The Rust backend emits 'mdviewer:open-file' with the file path.
+  listen('mdviewer:open-file', (event) => {
+    const filePath = event.payload;
+    loadFile(filePath);
+  });
+
+  // Update native window title whenever a file is loaded.
+  async function setWindowTitle(displayPath) {
+    try {
+      const win = getCurrent();
+      const newTitle = displayPath ? `${displayPath} : Markdown Viewer` : 'Markdown Viewer';
+      await invoke('set_window_title', { label: win.label, title: newTitle });
+    } catch (err) {
+      console.error('[mdviewer] Failed to set window title:', err);
+    }
   }
 
 

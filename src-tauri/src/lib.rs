@@ -1,7 +1,7 @@
 // Markdown rendering core
 
 use pulldown_cmark::{html::push_html, Options, Parser};
-use tauri::{command, Manager, RunEvent};
+use tauri::{command, AppHandle, Manager, RunEvent, WebviewUrl, WebviewWindowBuilder};
 use tauri_plugin_cli::CliExt;
 
 mod commands {
@@ -56,6 +56,47 @@ mod commands {
     #[command]
     pub fn get_cli_paths(app: tauri::AppHandle) -> Vec<String> {
         app.state::<CliPaths>().0.lock().unwrap().clone()
+    }
+
+    /// Set the window title for a specific window by label.
+    #[command]
+    pub fn set_window_title(app: tauri::AppHandle, label: String, title: String) {
+        if let Some(window) = app.get_webview_window(&label) {
+            window.set_title(&title).ok();
+        }
+    }
+
+    /// Format a window title as "filename : Markdown Viewer".
+    pub fn window_title(filename: &str) -> String {
+        format!("{} : Markdown Viewer", filename)
+    }
+
+    /// Create a window for a file (generic version for use in plugin closures).
+    pub(super) fn create_window_for_file<R: tauri::Runtime>(
+        app: &tauri::AppHandle<R>,
+        file_path: &str,
+        display: &str,
+    ) -> Result<(), String> {
+        let window_count = app.webview_windows().len();
+        let label = format!("window-{}", window_count);
+        let title = commands::window_title(display);
+        eprintln!("[mdviewer] Creating window '{}' for '{}'", label, title);
+        let window = WebviewWindowBuilder::new(app, &label, WebviewUrl::App("index.html".into()))
+            .title(&title)
+            .inner_size(1024.0, 768.0)
+            .build()
+            .map_err(|e| format!("Failed to create window: {}", e))?;
+        // Emit event so the new window's frontend can load the file.
+        let _ = window.emit("mdviewer:open-file", file_path);
+        Ok(())
+    }
+
+    /// Create a new window for the given file path (command version).
+    /// The window title is set to the display name (basename).
+    /// Emits a "mdviewer:open-file" event with the file path for the frontend.
+    #[command]
+    pub fn create_window(app: AppHandle, file_path: &str, title: &str) -> Result<(), String> {
+        create_window_for_file(&app, file_path, title)
     }
 
     #[command]
@@ -189,26 +230,26 @@ mod commands {
 // ─── macOS / iOS Document Open Plugin ────────────────────────────────────────
 
 /// Plugin that handles macOS/iOS "open file" events (double-click in Finder,
-/// `open file.md` from terminal, dock badge, etc.). Stores paths in CliPaths
-/// state so the frontend can load them.
+/// `open file.md` from terminal, dock badge, etc.). Creates a new window
+/// for each file so multiple files can be viewed simultaneously.
 #[cfg(any(target_os = "macos", target_os = "ios"))]
 fn open_file_plugin<R: tauri::Runtime>() -> tauri::plugin::TauriPlugin<R> {
     tauri::plugin::Builder::new("mdviewer-open-file")
         .on_event(|app, event| {
             if let RunEvent::Opened { urls } = event {
-                let paths = app.state::<commands::CliPaths>();
-                let mut paths = paths.0.lock().unwrap();
-                paths.clear();
                 for url in urls {
                     if let Ok(path) = url.to_file_path() {
                         let path_str = path.to_string_lossy().into_owned();
                         if commands::is_md_file(&path_str) {
-                            paths.push(path_str);
+                            let display = path_str.split('/').next_back().unwrap_or(&path_str);
+                            eprintln!("[mdviewer] Opening file in new window: {}", path_str);
+                            let _ = commands::create_window_for_file(
+                                app.app_handle(),
+                                &path_str,
+                                display,
+                            );
                         }
                     }
-                }
-                if !paths.is_empty() {
-                    eprintln!("[mdviewer] Opened via OS: {:?}", paths);
                 }
             }
         })
@@ -230,7 +271,29 @@ pub fn run() {
         .plugin(tauri_plugin_cli::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(open_file_plugin())
-        .setup(|app| commands::init_cli_paths(app))
+        .setup(|app| {
+            commands::init_cli_paths(app)?;
+            // The main window's frontend polls and loads the first CLI file.
+            // Set the main window title for the first file, and create
+            // additional windows for remaining files so each CLI arg
+            // gets its own window.
+            let paths = app.state::<commands::CliPaths>();
+            let file_paths = paths.0.lock().unwrap().clone();
+            if let Some(first_path) = file_paths.first() {
+                let display = first_path.split('/').next_back().unwrap_or(first_path);
+                let title = commands::window_title(display);
+                if let Some(main_window) = app.get_webview_window("main") {
+                    main_window.set_title(&title).ok();
+                    eprintln!("[mdviewer] Set main window title: {}", title);
+                }
+            }
+            for path_str in file_paths.iter().skip(1) {
+                let display = path_str.split('/').next_back().unwrap_or(path_str);
+                eprintln!("[mdviewer] Creating window for CLI file: {}", path_str);
+                let _ = commands::create_window_for_file(app.app_handle(), path_str, display);
+            }
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             commands::render_md,
             commands::extract_fm,
@@ -238,6 +301,8 @@ pub fn run() {
             commands::watch_file,
             commands::export_html,
             commands::get_cli_paths,
+            commands::create_window,
+            commands::set_window_title,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -802,6 +867,7 @@ mod tests {
             "watch_file",
             "export_html",
             "get_cli_paths",
+            "set_window_title",
             // plugin-provided commands (format: "plugin:<namespace>|<command>")
             "plugin:dialog|save",
             "plugin:dialog|open",
@@ -934,6 +1000,7 @@ mod tests {
             "watch_file",
             "export_html",
             "get_cli_paths",
+            "set_window_title",
         ]
         .into_iter()
         .collect();
