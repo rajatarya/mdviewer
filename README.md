@@ -171,6 +171,52 @@ Every line of Rust, every CSS rule, every JavaScript function was written throug
 
 ---
 
+## Release Process
+
+> For maintainers. Steps to cut a new release.
+
+### Prerequisites
+
+- Tauri CLI installed: `npm install -g @tauri-apps/cli`
+- Xcode Command Line Tools
+- GitHub CLI (`gh`) or access to GitHub releases page
+
+### Steps
+
+```bash
+# 1. Ensure everything passes
+make all
+
+# 2. Update version in both places
+#    Cargo.toml (workspace.package.version)
+#    src-tauri/tauri.conf.json (version)
+# Use the same VERSION for both, e.g. 1.3.0
+
+# 3. Commit the version bump
+git add Cargo.toml src-tauri/tauri.conf.json
+git commit -m "chore(release): bump version to 1.3.0"
+
+# 4. Tag the commit
+git tag -a v1.3.0 -m "Release v1.3.0"
+
+# 5. Push to main
+git push origin main --tags
+
+# 6. Build the release bundle (creates .dmg + .app)
+cd src-tauri && cargo tauri build
+cd ..
+
+# 7. Upload to GitHub Releases
+gh release create v1.3.0 \
+  src-tauri/target/release/bundle/dmg/"Markdown Viewer"_1.3.0_aarch64.dmg \
+  --title "Release v1.3.0" \
+  --generate-notes
+```
+
+> **Note:** macOS may quarantine the .dmg. Users need to run `xattr -cr` on the app after install (documented in Installation section).
+
+---
+
 ## License
 
 [MIT](LICENSE) · © 2026 Rajat Arya
