@@ -2,16 +2,21 @@
 
 use pulldown_cmark::{html::push_html, Options, Parser};
 use tauri::{command, AppHandle, Manager, RunEvent, WebviewUrl, WebviewWindowBuilder};
-use tauri_plugin_cli::CliExt;
 
 mod commands {
     use super::*;
     use std::collections::hash_map::DefaultHasher;
+    use std::collections::HashMap;
     use std::hash::{Hash, Hasher};
     use std::sync::atomic::AtomicBool;
     use std::sync::Arc;
     use std::sync::Mutex;
     use tauri::Emitter;
+
+    /// Per-window file path mapping: window label → file path.
+    /// Used so each window knows which file to load on init,
+    /// avoiding the race condition where the open-file event
+    /// fires before the frontend is ready to listen.
 
     /// Check whether a path looks like a markdown/text file.
     pub fn is_md_file(path: &str) -> bool {
@@ -23,26 +28,19 @@ mod commands {
     #[derive(Default)]
     pub struct CliPaths(pub Mutex<Vec<String>>);
 
-    /// Read CLI args and store markdown file paths in state.
-    /// Only updates state if CLI args actually contain file paths —
-    /// this preserves paths set by the `Opened` event handler (macOS
-    /// double-click in Finder) which fires before setup runs.
-    pub fn init_cli_paths(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
-        let matches = app.cli().matches()?;
+    /// Per-window file path mapping: window label → file path.
+    #[derive(Default)]
+    pub struct WindowFiles(pub Mutex<HashMap<String, String>>);
 
-        let paths: Vec<String> = matches
-            .args
-            .get("files")
-            .map(|arg| {
-                arg.value
-                    .as_array()
-                    .into_iter()
-                    .flat_map(|arr| arr.iter().filter_map(|v| v.as_str()))
-                    .filter(|p| is_md_file(p))
-                    .map(String::from)
-                    .collect()
-            })
-            .unwrap_or_default();
+    /// Read CLI args and store markdown file paths in state.
+    /// Reads directly from std::env::args() for reliability —
+    /// avoids Tauri CLI plugin configuration issues.
+    pub fn init_cli_paths(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
+        let paths: Vec<String> = std::env::args()
+            .skip(1) // skip program name
+            .filter(|arg| !arg.starts_with('-')) // skip flags
+            .filter(|p| is_md_file(p))
+            .collect();
 
         if !paths.is_empty() {
             eprintln!("[mdviewer] Opening from CLI: {:?}", paths);
@@ -56,6 +54,13 @@ mod commands {
     #[command]
     pub fn get_cli_paths(app: tauri::AppHandle) -> Vec<String> {
         app.state::<CliPaths>().0.lock().unwrap().clone()
+    }
+
+    /// Get the file path assigned to a specific window by label.
+    /// Returns None if no file is assigned to this window.
+    #[command]
+    pub fn get_window_file(app: tauri::AppHandle, label: String) -> Option<String> {
+        app.state::<WindowFiles>().0.lock().unwrap().get(&label).cloned()
     }
 
     /// Set the window title for a specific window by label.
@@ -81,13 +86,13 @@ mod commands {
         let label = format!("window-{}", window_count);
         let title = commands::window_title(display);
         eprintln!("[mdviewer] Creating window '{}' for '{}'", label, title);
-        let window = WebviewWindowBuilder::new(app, &label, WebviewUrl::App("index.html".into()))
+        // Pass file path as URL query parameter — available immediately on page load.
+        let url = format!("index.html?file={}", urlencoding::encode(file_path));
+        let _window = WebviewWindowBuilder::new(app, &label, WebviewUrl::App(url.into()))
             .title(&title)
             .inner_size(1024.0, 768.0)
             .build()
             .map_err(|e| format!("Failed to create window: {}", e))?;
-        // Emit event so the new window's frontend can load the file.
-        let _ = window.emit("mdviewer:open-file", file_path);
         Ok(())
     }
 
@@ -264,19 +269,22 @@ fn open_file_plugin<R: tauri::Runtime>() -> tauri::plugin::TauriPlugin<R> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    use commands::{
+        create_window, extract_fm, export_html, get_cli_paths, get_window_file, read_file,
+        render_md, set_window_title, watch_file,
+    };
     let paths = commands::CliPaths(std::sync::Mutex::new(Vec::new()));
+    let window_files = commands::WindowFiles(std::sync::Mutex::new(
+        std::collections::HashMap::new(),
+    ));
 
     tauri::Builder::default()
         .manage(paths)
-        .plugin(tauri_plugin_cli::init())
+        .manage(window_files)
         .plugin(tauri_plugin_dialog::init())
         .plugin(open_file_plugin())
         .setup(|app| {
             commands::init_cli_paths(app)?;
-            // The main window's frontend polls and loads the first CLI file.
-            // Set the main window title for the first file, and create
-            // additional windows for remaining files so each CLI arg
-            // gets its own window.
             let paths = app.state::<commands::CliPaths>();
             let file_paths = paths.0.lock().unwrap().clone();
             if let Some(first_path) = file_paths.first() {
@@ -294,15 +302,38 @@ pub fn run() {
             }
             Ok(())
         })
+        .on_page_load(|webview, _payload| {
+            let label = webview.window().label().to_string();
+            eprintln!("[mdviewer] on_page_load: {}", label);
+            // When the main window loads, check if it has a CLI file to open.
+            if label == "main" {
+                let app_handle = webview.app_handle().clone();
+                let paths = app_handle.state::<commands::CliPaths>();
+                let file_paths = paths.0.lock().unwrap().clone();
+                if let Some(first_path) = file_paths.first() {
+                    let js = format!(
+                        "(function() {{ if (typeof loadFile === 'function') {{ loadFile({}); }} }})();",
+                        serde_json::to_string(first_path).unwrap_or_default()
+                    );
+                    eprintln!("[mdviewer] on_page_load: calling loadFile({})", first_path);
+                    if let Err(e) = webview.eval(&js) {
+                        eprintln!("[mdviewer] on_page_load: eval failed: {}", e);
+                    }
+                } else {
+                    eprintln!("[mdviewer] on_page_load: no CLI paths found");
+                }
+            }
+        })
         .invoke_handler(tauri::generate_handler![
-            commands::render_md,
-            commands::extract_fm,
-            commands::read_file,
-            commands::watch_file,
-            commands::export_html,
-            commands::get_cli_paths,
-            commands::create_window,
-            commands::set_window_title,
+            render_md,
+            extract_fm,
+            read_file,
+            watch_file,
+            export_html,
+            get_cli_paths,
+            get_window_file,
+            create_window,
+            set_window_title,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -853,20 +884,23 @@ mod tests {
 
     // ─── Task 16: Frontend-backend command name consistency ─────────────────────
 
-    /// Verify that every invoke() call in the frontend HTML matches a registered
-    /// backend command. Catches camelCase/snake_case mismatches before they reach
-    /// users (regression guard for the "Command renderMd not found" bug).
+    /// Verify that every invoke() call in the frontend HTML uses the correct
+    /// camelCase names that Tauri 2.x auto-converts from Rust snake_case #[command]
+    /// names. Catches mismatches before they reach users.
     #[test]
     fn test_frontend_invokes_match_backend_commands() {
-        // The set of all commands registered via generate_handler! in run()
-        // plus commands from plugins (tauri-plugin-dialog provides dialog_save, etc.).
+        // The set of all commands the frontend invokes.
+        // Tauri 2.x #[command] registers commands with their exact Rust function name
+        // (snake_case). The frontend must use the same snake_case names.
         let registered: std::collections::HashSet<&str> = [
+            // Custom commands (exact Rust function names)
             "render_md",
             "extract_fm",
             "read_file",
             "watch_file",
             "export_html",
             "get_cli_paths",
+            "get_window_file",
             "set_window_title",
             // plugin-provided commands (format: "plugin:<namespace>|<command>")
             "plugin:dialog|save",
@@ -905,7 +939,8 @@ mod tests {
             "Frontend invokes unknown commands: {:?}.\n\n\
              Registered backend commands: {:?}\n\
              Frontend calls: {:?}\n\n\
-             Fix: ensure frontend invoke() names match backend #[command] function names (snake_case).",
+             Fix: Tauri 2.x auto-converts Rust snake_case to camelCase on the frontend.
+             Use camelCase invoke() names like renderMd, readFile, etc.",
             mismatches,
             registered,
             frontend_calls,

@@ -435,6 +435,7 @@
 
   /** Load a file from disk path and start watching it. */
   async function loadFile(filePath) {
+    console.log('[mdviewer] loadFile() called with:', filePath);
     try {
       currentFilePath = filePath;
       const content = await invoke('read_file', { path: filePath });
@@ -575,41 +576,29 @@
     preview.innerHTML = `<div style="padding:2em;text-align:center;color:red"><h3>⚠️ Error</h3><p>${msg}</p></div>`;
   }
 
-  // Startup: check for CLI file paths and auto-load.
-  // Also polls for paths that arrive after init (e.g. macOS "open file" event
-  // fires after the webview has loaded). Stops polling once a file is loaded.
-  let _pollingStopped = false;
+  // Startup: load file from URL query param (?file=...) for secondary windows.
+  // For the main window, Rust's on_page_load callback calls loadFile() via eval().
   async function init() {
-    try {
-      const cliPaths = await invoke('get_cli_paths');
-      if (cliPaths.length > 0) {
-        await loadFile(cliPaths[0]);
-        _pollingStopped = true;
-      }
-    } catch (_) {
-      // No CLI args or error — show placeholder
+    // Secondary windows: file path is in the URL
+    const params = new URLSearchParams(window.location.search);
+    const urlFile = params.get('file');
+    if (urlFile) {
+      await loadFile(decodeURIComponent(urlFile));
+      return;
     }
-    // Poll for paths that arrive after init (macOS Opened event)
-    const poll = async () => {
-      if (_pollingStopped) return;
+    // Main window: Rust calls loadFile() via on_page_load callback.
+    // As a safety net, poll getCliPaths for 1s in case on_page_load didn't fire.
+    for (let i = 0; i < 10; i++) {
       try {
         const cliPaths = await invoke('get_cli_paths');
         if (cliPaths.length > 0) {
           await loadFile(cliPaths[0]);
-          _pollingStopped = true;
+          return;
         }
-      } catch (_) {}
-      setTimeout(poll, 500);
-    };
-    poll();
+      } catch {}
+      await new Promise(r => setTimeout(r, 100));
+    }
   }
-
-  // Listen for new windows created by the Opened event handler.
-  // The Rust backend emits 'mdviewer:open-file' with the file path.
-  listen('mdviewer:open-file', (event) => {
-    const filePath = event.payload;
-    loadFile(filePath);
-  });
 
   // Update native window title whenever a file is loaded.
   async function setWindowTitle(displayPath) {

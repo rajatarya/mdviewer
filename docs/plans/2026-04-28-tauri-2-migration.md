@@ -218,3 +218,34 @@ The test `test_frontend_invokes_match_backend_commands` catches mismatches.
 
 Every plugin (including built-in ones like dialog) must be registered via `.plugin()` in the
 Tauri builder. Unregistered plugins silently fail — no error, no command.
+
+---
+
+## macOS Code Signing Gotcha
+
+Tauri 2.x creates an adhoc code signature that becomes **invalid after the app is copied**.
+The signature has `Info.plist=not bound` and `Sealed Resources=none`, so when file hashes
+change during a copy, macOS rejects the app:
+
+```
+OS_REASON_CODESIGNING | embedded signature doesn't match attached signature
+```
+
+**Fix:** Any script that copies a Tauri `.app` bundle must re-sign it:
+```bash
+codesign --sign - --force --deep "${APP_DIR}/${APP_NAME}.app"
+```
+
+See `docs/plans/2026-05-01-tauri-2-frontend-backend-mismatches.md` for full details.
+
+---
+
+## Checklist Before Adding New Features
+
+1. **Is it a plugin command?** → Use `invoke()`, not `window.__TAURI__.*`
+2. **Does the plugin exist in Cargo.toml?** → Add `tauri-plugin-* = "2"` if needed
+3. **Is the plugin registered in lib.rs?** → `.plugin(tauri_plugin_*::init())`
+4. **Does the frontend invoke match a registered command?** → Check the test
+5. **Does `currentContent` get set for this code path?** → Export depends on it
+6. **Does the command name use snake_case?** → `render_md` not `renderMd`
+7. **Is the app being copied on macOS?** → Re-sign with `codesign --sign - --force --deep`

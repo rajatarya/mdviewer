@@ -77,9 +77,17 @@ do_install() {
   cp -Rf "$bundle_path" "$APPS_DIR/"
 
   # 4. Remove quarantine attribute (needed for macOS Gatekeeper)
+  info "Removing MacOS quarantine for: ${APPS_DIR}/${APP_BUNDLE}"
   xattr -dr com.apple.quarantine "${APPS_DIR}/${APP_BUNDLE}" 2>/dev/null || true
 
-  # 5. Create wrapper script in ~/.local/bin
+  # 5. Re-sign the app bundle.
+  # Tauri 2.x creates an adhoc signature that becomes invalid after copy
+  # (file hashes change, causing "embedded signature doesn't match attached signature").
+  # Re-signing fixes the signature so the app launches from ~/Applications.
+  info "Re-signing app bundle for ~/Applications..."
+  codesign --sign - --force --deep "${APPS_DIR}/${APP_BUNDLE}" 2>/dev/null || true
+
+  # 6. Create wrapper script in ~/.local/bin
   # .app bundles are directories, so we use a small wrapper that calls 'open'.
   # Intercepts --help/-h so it prints help without launching the app.
   mkdir -p "$BIN_DIR"
@@ -120,11 +128,11 @@ WRAPPER
   sed -i '' "s|PLACEHOLDER_APP|${APPS_DIR}/${APP_BUNDLE}|" "$wrapper"
   chmod +x "$wrapper"
 
-  # 6. Register file associations via LaunchServices
+  # 8. Register file associations via LaunchServices
   info "Registering file associations (.md, .markdown, .txt)..."
   /usr/bin/lsregister -f "${APPS_DIR}/${APP_BUNDLE}" 2>/dev/null || true
 
-  # 7. Print next steps
+  # 9. Print next steps
   echo ""
   info "Installation complete!"
   echo ""
