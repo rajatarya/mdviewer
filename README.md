@@ -161,11 +161,13 @@ Forks and issues are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md) for deta
 
 ## Colophon
 
-This app was designed and implemented entirely by **[pi.dev](https://pi.dev)** — an AI coding agent — using the **Qwen3.6-35B-A3B-GGUF:BF16** model by [Unsloth](http://unsloth.ai/) ([🤗 Hugging Face](https://huggingface.co/unsloth/Qwen3.6-35B-A3B-GGUF)).
+This app was designed and implemented entirely by AI coding agents.
 
-The model was hosted locally via [llama.cpp](https://github.com/ggml-org/llama.cpp) on an M5 MacBook Pro (128 GB RAM), with the GGUF weights downloaded directly from Hugging Face.
+The initial implementation — every line of Rust, every CSS rule, every JavaScript function — was written by **[pi.dev](https://pi.dev)** using the **Qwen3.6-35B-A3B-GGUF:BF16** model by [Unsloth](http://unsloth.ai/) ([🤗 Hugging Face](https://huggingface.co/unsloth/Qwen3.6-35B-A3B-GGUF)), hosted locally via [llama.cpp](https://github.com/ggml-org/llama.cpp) on an M5 MacBook Pro (128 GB RAM).
 
-Every line of Rust, every CSS rule, every JavaScript function was written through conversation with the agent. The result: a complete, tested, production-ready native macOS app — from zero to shipped — without a single human typing code.
+Subsequent fixes and architectural work — including the Tauri 2.x migration cleanup and the v1.4.0 macOS file-open deadlock investigation — were done by **[Claude](https://www.anthropic.com/claude)** (Anthropic), accessed through [Claude Code](https://claude.com/claude-code).
+
+The result: a complete, tested, production-ready native macOS app — from zero to shipped — without a single human typing code.
 
 **Stack:** Tauri 2 · Rust · pulldown-cmark · ammonia · KaTeX · Mermaid.js
 
