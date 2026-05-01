@@ -86,7 +86,7 @@ mod commands {
         let label = format!("window-{}", window_count);
         let title = commands::window_title(display);
         eprintln!("[mdviewer] Creating window '{}' for '{}'", label, title);
-        // Pass file path as URL query parameter — available immediately on page load.
+        // Pass file path as URL query parameter (URL-encoded) — available immediately on page load.
         let url = format!("index.html?file={}", urlencoding::encode(file_path));
         let _window = WebviewWindowBuilder::new(app, &label, WebviewUrl::App(url.into()))
             .title(&title)
@@ -285,6 +285,52 @@ pub fn run() {
         .plugin(open_file_plugin())
         .setup(|app| {
             commands::init_cli_paths(app)?;
+
+            // Background thread: poll for signal files from secondary instances.
+            // macOS may spawn a new process when double-clicking a file; this
+            // thread reads those file paths and opens windows in the running instance.
+            #[cfg(target_os = "macos")]
+            {
+                let app_handle = app.app_handle().clone();
+                std::thread::spawn(move || {
+                    let tmp_dir = std::env::temp_dir().join("mdviewer");
+                    let signal_file = tmp_dir.join("open_urls.txt");
+                    eprintln!("[mdviewer] Signal file polling started: {}", signal_file.display());
+                    loop {
+                        std::thread::sleep(std::time::Duration::from_secs(1));
+                        if let Ok(content) = std::fs::read_to_string(&signal_file) {
+                            let lines: Vec<String> = content
+                                .lines()
+                                .filter(|l| !l.is_empty())
+                                .map(|l| l.to_string())
+                                .collect();
+                            if !lines.is_empty() {
+                                eprintln!("[mdviewer] Signal file found with {} paths", lines.len());
+                                // Clear the signal file immediately to avoid re-processing
+                                let _ = std::fs::write(&signal_file, "");
+                                for path_str in &lines {
+                                    if commands::is_md_file(path_str) {
+                                        let display = path_str
+                                            .split('/')
+                                            .next_back()
+                                            .unwrap_or(path_str);
+                                        eprintln!(
+                                            "[mdviewer] Opening signal file path: {}",
+                                            path_str
+                                        );
+                                        let _ = commands::create_window_for_file(
+                                            &app_handle,
+                                            path_str,
+                                            display,
+                                        );
+                                    }
+                                }
+                            }
+                        }
+                    }
+                });
+            }
+
             let paths = app.state::<commands::CliPaths>();
             let file_paths = paths.0.lock().unwrap().clone();
             if let Some(first_path) = file_paths.first() {
