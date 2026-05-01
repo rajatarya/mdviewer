@@ -40,19 +40,5 @@
       }
     ]
   },
-  "plugins": {
-    "cli": {
-      "description": "A lightweight Markdown viewer",
-      "args": [
-        {
-          "name": "files",
-          "index": 1,
-          "takesValue": true,
-          "multiple": true,
-          "required": false,
-          "description": "Markdown files to open"
-        }
-      ]
-    }
-  }
+  "plugins": {}
 }

@@ -60,7 +60,12 @@ mod commands {
     /// Returns None if no file is assigned to this window.
     #[command]
     pub fn get_window_file(app: tauri::AppHandle, label: String) -> Option<String> {
-        app.state::<WindowFiles>().0.lock().unwrap().get(&label).cloned()
+        app.state::<WindowFiles>()
+            .0
+            .lock()
+            .unwrap()
+            .get(&label)
+            .cloned()
     }
 
     /// Set the window title for a specific window by label.
@@ -76,7 +81,22 @@ mod commands {
         format!("{} : Markdown Viewer", filename)
     }
 
+    /// Cascade offset for the Nth secondary window so each new window lands
+    /// at a distinct, visible position rather than stacking on top of the
+    /// previous one. Tauri / AppKit do not consistently auto-cascade when
+    /// windows are created back-to-back during startup.
+    pub fn cascade_position(window_index: usize) -> (f64, f64) {
+        let base_x = 120.0;
+        let base_y = 120.0;
+        let step = 30.0;
+        let n = window_index as f64;
+        (base_x + n * step, base_y + n * step)
+    }
+
     /// Create a window for a file (generic version for use in plugin closures).
+    ///
+    /// MUST be called on the main thread on macOS — `WebviewWindowBuilder::build()`
+    /// initializes AppKit/WKWebView objects, which require the main run loop.
     pub(super) fn create_window_for_file<R: tauri::Runtime>(
         app: &tauri::AppHandle<R>,
         file_path: &str,
@@ -85,15 +105,67 @@ mod commands {
         let window_count = app.webview_windows().len();
         let label = format!("window-{}", window_count);
         let title = commands::window_title(display);
-        eprintln!("[mdviewer] Creating window '{}' for '{}'", label, title);
+        let (x, y) = cascade_position(window_count);
+        eprintln!(
+            "[mdviewer] Creating window '{}' for '{}' at ({}, {})",
+            label, title, x, y
+        );
         // Pass file path as URL query parameter (URL-encoded) — available immediately on page load.
         let url = format!("index.html?file={}", urlencoding::encode(file_path));
         let _window = WebviewWindowBuilder::new(app, &label, WebviewUrl::App(url.into()))
             .title(&title)
             .inner_size(1024.0, 768.0)
+            .position(x, y)
             .build()
             .map_err(|e| format!("Failed to create window: {}", e))?;
         Ok(())
+    }
+
+    /// Route a file path to the right window:
+    ///   - Main exists and is empty (no CLI/Opened path bound) → fill main, set title.
+    ///   - Main exists and already has a file → create a new window.
+    ///   - Main doesn't exist yet (Apple Event arrived before setup) → push to CliPaths
+    ///     so setup() / on_page_load picks it up when the main window is built.
+    ///
+    /// MUST be called on the main thread on macOS.
+    pub(super) fn open_or_create_window<R: tauri::Runtime>(
+        app: &tauri::AppHandle<R>,
+        file_path: &str,
+    ) {
+        let display = file_path.split('/').next_back().unwrap_or(file_path);
+
+        let main = app.get_webview_window("main");
+        let cli_paths = app.state::<CliPaths>();
+
+        let should_fill_main = {
+            let mut paths = cli_paths.0.lock().unwrap();
+            if paths.is_empty() {
+                paths.push(file_path.to_string());
+                main.is_some()
+            } else {
+                false
+            }
+        };
+
+        if should_fill_main {
+            if let Some(main) = main {
+                let _ = main.set_title(&window_title(display));
+                let js = format!(
+                    "(function() {{ if (typeof loadFile === 'function') {{ loadFile({}); }} }})();",
+                    serde_json::to_string(file_path).unwrap_or_default()
+                );
+                let _ = main.eval(&js);
+            }
+            return;
+        }
+
+        // Main doesn't exist yet → CliPaths now holds this path; setup() will use it.
+        if main.is_none() {
+            return;
+        }
+
+        // Main exists and already has a file → new window.
+        let _ = create_window_for_file(app, file_path, display);
     }
 
     /// Create a new window for the given file path (command version).
@@ -235,8 +307,20 @@ mod commands {
 // ─── macOS / iOS Document Open Plugin ────────────────────────────────────────
 
 /// Plugin that handles macOS/iOS "open file" events (double-click in Finder,
-/// `open file.md` from terminal, dock badge, etc.). Creates a new window
-/// for each file so multiple files can be viewed simultaneously.
+/// `open file.md` from terminal, dock badge, etc.). Routes each file through
+/// `open_or_create_window` so the empty main window is filled on first launch
+/// instead of leaving an extra blank window behind.
+///
+/// Deadlock avoidance: `WebviewWindowBuilder::build()` cannot be called
+/// (directly or via `run_on_main_thread`) from inside this handler. Tauri
+/// holds `manager.plugins.lock()` for the duration of `on_event`, and the
+/// window-creation path acquires the same lock to fire `window_created` on
+/// plugins. `run_on_main_thread` from the main thread is synchronous in
+/// Tauri 2, so deferring through it doesn't help. The fix: hop to a tokio
+/// task with `async_runtime::spawn`, then back to the main thread with
+/// `run_on_main_thread` from a non-main thread — that path uses the event
+/// loop proxy and runs the closure in the next iteration, after `on_event`
+/// has returned and released the plugin lock.
 #[cfg(any(target_os = "macos", target_os = "ios"))]
 fn open_file_plugin<R: tauri::Runtime>() -> tauri::plugin::TauriPlugin<R> {
     tauri::plugin::Builder::new("mdviewer-open-file")
@@ -246,13 +330,13 @@ fn open_file_plugin<R: tauri::Runtime>() -> tauri::plugin::TauriPlugin<R> {
                     if let Ok(path) = url.to_file_path() {
                         let path_str = path.to_string_lossy().into_owned();
                         if commands::is_md_file(&path_str) {
-                            let display = path_str.split('/').next_back().unwrap_or(&path_str);
-                            eprintln!("[mdviewer] Opening file in new window: {}", path_str);
-                            let _ = commands::create_window_for_file(
-                                app.app_handle(),
-                                &path_str,
-                                display,
-                            );
+                            eprintln!("[mdviewer] Apple Event opened: {}", path_str);
+                            let app = app.app_handle().clone();
+                            tauri::async_runtime::spawn(async move {
+                                let _ = app.clone().run_on_main_thread(move || {
+                                    commands::open_or_create_window(&app, &path_str);
+                                });
+                            });
                         }
                     }
                 }
@@ -270,66 +354,39 @@ fn open_file_plugin<R: tauri::Runtime>() -> tauri::plugin::TauriPlugin<R> {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     use commands::{
-        create_window, extract_fm, export_html, get_cli_paths, get_window_file, read_file,
+        create_window, export_html, extract_fm, get_cli_paths, get_window_file, read_file,
         render_md, set_window_title, watch_file,
     };
     let paths = commands::CliPaths(std::sync::Mutex::new(Vec::new()));
-    let window_files = commands::WindowFiles(std::sync::Mutex::new(
-        std::collections::HashMap::new(),
-    ));
+    let window_files =
+        commands::WindowFiles(std::sync::Mutex::new(std::collections::HashMap::new()));
 
-    tauri::Builder::default()
-        .manage(paths)
-        .manage(window_files)
+    let mut builder = tauri::Builder::default().manage(paths).manage(window_files);
+
+    // Single-instance plugin: when macOS (or another OS) spawns a duplicate process,
+    // the new process forwards its argv to this running instance instead of starting
+    // a second app. The plugin's callback runs on a tokio task — NOT the main thread —
+    // so window creation must be dispatched via `run_on_main_thread`.
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    {
+        builder = builder.plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
+            let app = app.clone();
+            let _ = app.clone().run_on_main_thread(move || {
+                for arg in args.iter().skip(1) {
+                    if !arg.starts_with('-') && commands::is_md_file(arg) {
+                        eprintln!("[mdviewer] Single-instance arg: {}", arg);
+                        commands::open_or_create_window(&app, arg);
+                    }
+                }
+            });
+        }));
+    }
+
+    builder
         .plugin(tauri_plugin_dialog::init())
         .plugin(open_file_plugin())
         .setup(|app| {
             commands::init_cli_paths(app)?;
-
-            // Background thread: poll for signal files from secondary instances.
-            // macOS may spawn a new process when double-clicking a file; this
-            // thread reads those file paths and opens windows in the running instance.
-            #[cfg(target_os = "macos")]
-            {
-                let app_handle = app.app_handle().clone();
-                std::thread::spawn(move || {
-                    let tmp_dir = std::env::temp_dir().join("mdviewer");
-                    let signal_file = tmp_dir.join("open_urls.txt");
-                    eprintln!("[mdviewer] Signal file polling started: {}", signal_file.display());
-                    loop {
-                        std::thread::sleep(std::time::Duration::from_secs(1));
-                        if let Ok(content) = std::fs::read_to_string(&signal_file) {
-                            let lines: Vec<String> = content
-                                .lines()
-                                .filter(|l| !l.is_empty())
-                                .map(|l| l.to_string())
-                                .collect();
-                            if !lines.is_empty() {
-                                eprintln!("[mdviewer] Signal file found with {} paths", lines.len());
-                                // Clear the signal file immediately to avoid re-processing
-                                let _ = std::fs::write(&signal_file, "");
-                                for path_str in &lines {
-                                    if commands::is_md_file(path_str) {
-                                        let display = path_str
-                                            .split('/')
-                                            .next_back()
-                                            .unwrap_or(path_str);
-                                        eprintln!(
-                                            "[mdviewer] Opening signal file path: {}",
-                                            path_str
-                                        );
-                                        let _ = commands::create_window_for_file(
-                                            &app_handle,
-                                            path_str,
-                                            display,
-                                        );
-                                    }
-                                }
-                            }
-                        }
-                    }
-                });
-            }
 
             let paths = app.state::<commands::CliPaths>();
             let file_paths = paths.0.lock().unwrap().clone();
@@ -888,6 +945,55 @@ mod tests {
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
+    // ─── Window cascade positioning ──────────────────────────────────────────
+    // Bug: when multiple files are opened on launch, additional windows
+    // were placed at the same default coordinates as the main window,
+    // hiding them directly behind it. Each new window must get a distinct
+    // position so all windows are visible.
+
+    #[test]
+    fn test_cascade_position_distinct_per_index() {
+        let p0 = commands::cascade_position(0);
+        let p1 = commands::cascade_position(1);
+        let p2 = commands::cascade_position(2);
+        assert_ne!(p0, p1);
+        assert_ne!(p1, p2);
+        assert_ne!(p0, p2);
+    }
+
+    #[test]
+    fn test_cascade_position_offsets_grow_monotonically() {
+        let (x0, y0) = commands::cascade_position(0);
+        let (x1, y1) = commands::cascade_position(1);
+        let (x2, y2) = commands::cascade_position(2);
+        assert!(
+            x1 > x0 && y1 > y0,
+            "({}, {}) not > ({}, {})",
+            x1,
+            y1,
+            x0,
+            y0
+        );
+        assert!(
+            x2 > x1 && y2 > y1,
+            "({}, {}) not > ({}, {})",
+            x2,
+            y2,
+            x1,
+            y1
+        );
+    }
+
+    #[test]
+    fn test_cascade_position_offset_visible_apart() {
+        // Adjacent windows must be far enough apart for the user to see
+        // both window borders — at least 20 pixels in each axis.
+        let (x0, y0) = commands::cascade_position(0);
+        let (x1, y1) = commands::cascade_position(1);
+        assert!((x1 - x0) >= 20.0, "x delta {} too small", x1 - x0);
+        assert!((y1 - y0) >= 20.0, "y delta {} too small", y1 - y0);
+    }
+
     #[test]
     fn test_is_md_file_accepts_md() {
         assert!(commands::is_md_file("test.md"));
@@ -1088,6 +1194,9 @@ mod tests {
 
         let mut errors = Vec::new();
 
+        // Extract argument keys (handles "key: value" patterns).
+        let key_re = regex::Regex::new(r#"([a-zA-Z_][a-zA-Z0-9_]*)\s*:"#).unwrap();
+
         for cap in invoke_re.captures_iter(&flat) {
             let cmd = cap.get(1).unwrap().as_str();
 
@@ -1097,9 +1206,6 @@ mod tests {
             }
 
             let args_str = cap.get(2).unwrap().as_str();
-
-            // Extract argument keys (handles "key: value" patterns)
-            let key_re = regex::Regex::new(r#"([a-zA-Z_][a-zA-Z0-9_]*)\s*:"#).unwrap();
 
             for key_cap in key_re.captures_iter(args_str) {
                 let key = key_cap.get(1).unwrap().as_str();
