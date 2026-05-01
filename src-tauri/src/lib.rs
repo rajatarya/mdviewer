@@ -17,7 +17,7 @@ mod commands {
     /// Used so each window knows which file to load on init,
     /// avoiding the race condition where the open-file event
     /// fires before the frontend is ready to listen.
-
+    ///
     /// Check whether a path looks like a markdown/text file.
     pub fn is_md_file(path: &str) -> bool {
         let lower = path.to_lowercase();
