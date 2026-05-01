@@ -114,7 +114,7 @@ mod commands {
         let url = format!("index.html?file={}", urlencoding::encode(file_path));
         let _window = WebviewWindowBuilder::new(app, &label, WebviewUrl::App(url.into()))
             .title(&title)
-            .inner_size(1024.0, 768.0)
+            .inner_size(1280.0, 1024.0)
             .position(x, y)
             .build()
             .map_err(|e| format!("Failed to create window: {}", e))?;
