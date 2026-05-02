@@ -647,8 +647,9 @@ fn preprocess_wikilinks(markdown: &str) -> String {
 // ─── Main Rendering Pipeline ─────────────────────────────────────────────────
 
 /// Render markdown string to sanitized HTML.
-/// Code fenced sections are extracted first via placeholders to prevent
-/// downstream preproccessors (wikilinks etc.) from corrupting their content.
+/// Fenced and inline code blocks are extracted first via placeholders to prevent
+/// downstream preprocessors (emoji, math, wikilinks, callouts) from corrupting
+/// their content. Blocks are restored before markdown parsing.
 pub fn render_markdown(markdown: &str) -> String {
     // Phase 0 — Extract fenced blocks so regex preprocessors don't alter code.
     let fence_re = Regex::new(r"(?s)```[^\n`]*\n.*?```").unwrap();
@@ -661,8 +662,21 @@ pub fn render_markdown(markdown: &str) -> String {
         })
         .into_owned();
 
+    // Phase 0b — Extract inline code (single backticks) for the same reason.
+    // Prevents emoji/math/wikilink preprocessors from matching inside code.
+    // Store the FULL match (including backticks) so restoration is exact.
+    let inline_re = Regex::new(r"`[^`]+`").unwrap();
+    let mut inline_blocks: Vec<String> = Vec::new();
+    let without_inline = inline_re
+        .replace_all(&without_fences, |caps: &regex::Captures| {
+            let idx = inline_blocks.len();
+            inline_blocks.push(caps[0].to_string());
+            format!("\x00INLINE_CODE_{}\x00", idx)
+        })
+        .into_owned();
+
     // 1. Preprocess math
-    let with_math = preprocess_math(&without_fences);
+    let with_math = preprocess_math(&without_inline);
     // 2. Preprocess emojis
     let with_emojis = preprocess_emojis(&with_math);
     // 3. Preprocess wikilinks
@@ -673,6 +687,12 @@ pub fn render_markdown(markdown: &str) -> String {
     // Restore fenced blocks before markdown parsing.
     for (idx, block) in fence_blocks.iter().enumerate() {
         let placeholder = format!("\x00FENCED_BLOCK_{}\x00", idx);
+        with_callouts = with_callouts.replace(&placeholder, block);
+    }
+
+    // Restore inline code blocks.
+    for (idx, block) in inline_blocks.iter().enumerate() {
+        let placeholder = format!("\x00INLINE_CODE_{}\x00", idx);
         with_callouts = with_callouts.replace(&placeholder, block);
     }
 
@@ -817,6 +837,46 @@ mod tests {
         assert!(output.contains("🚀"));
         assert!(output.contains("❤"));
         assert!(output.contains("👍"));
+    }
+
+    #[test]
+    fn it_renders_emoji_shortcode_with_plus() {
+        let input = ":+1: :sparkles:";
+        let output = render_markdown(input);
+        assert!(output.contains("👍"));
+        assert!(output.contains("✨"));
+    }
+
+    #[test]
+    fn it_preserves_emoji_in_inline_code() {
+        let input = "Use `:rocket:` for launch";
+        let output = render_markdown(input);
+        assert!(
+            !output.contains("🚀"),
+            "emoji inside inline code must not be replaced"
+        );
+        assert!(output.contains("<code>"), "must still produce code element");
+    }
+
+    #[test]
+    fn it_preserves_emoji_in_fenced_code() {
+        let input = "```\n:rocket: :heart:\n```";
+        let output = render_markdown(input);
+        assert!(
+            !output.contains("🚀"),
+            "emoji inside fenced code must not be replaced"
+        );
+        assert!(!output.contains("❤"));
+    }
+
+    #[test]
+    fn it_preserves_unknown_emoji_shortcodes() {
+        let input = "This has :unknown_emoji: shortcode";
+        let output = render_markdown(input);
+        assert!(
+            output.contains(":unknown_emoji:"),
+            "unknown shortcodes must be preserved"
+        );
     }
 
     #[test]
