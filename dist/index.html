@@ -66,6 +66,7 @@
     color: var(--text);
     line-height: 1.6;
     transition: background 0.2s, color 0.2s;
+    overflow-x: auto;
   }
 
   /* Toolbar */
@@ -91,6 +92,17 @@
     cursor: pointer;
     font-size: 14px;
     transition: background 0.15s;
+    min-width: 32px;
+  }
+
+  .toolbar .zoom-group {
+    display: flex;
+    gap: 2px;
+  }
+
+  .toolbar .zoom-group button {
+    padding: 6px 8px;
+    min-width: 28px;
   }
 
   .toolbar button:hover {
@@ -121,6 +133,8 @@
   .container {
     margin: 0 auto;
     padding: 0px 32px 16px 32px;
+    transition: transform 0.15s ease;
+    will-change: transform;
   }
 
   /* Markdown content */
@@ -350,6 +364,11 @@
   <span class="title" id="app-title">Markdown Viewer</span>
   <button id="export-btn" title="Export as HTML" style="display:none">💾 Export</button>
   <button id="theme-btn" title="Toggle theme">🌙</button>
+  <div class="zoom-group">
+    <button id="zoom-out-btn" title="Zoom out">−</button>
+    <button id="zoom-reset-btn" title="Reset zoom">100%</button>
+    <button id="zoom-in-btn" title="Zoom in">+</button>
+  </div>
 </div>
 
 <div class="container">
@@ -401,6 +420,68 @@
     themeBtn.textContent = next === 'dark' ? '☀️' : '🌙';
     localStorage.setItem('mdviewer-theme', next);
   });
+
+  // Zoom control — uses CSS transform: scale() with top-left origin (keeps left edge fixed)
+  const ZOOM_STEP = 0.25;
+  const ZOOM_MIN = 0.5;
+  const ZOOM_MAX = 3.0;
+  let zoomLevel = parseFloat(localStorage.getItem('mdviewer-zoom')) || 1.0;
+
+  // Apply CSS transform: scale() to the container
+  function applyCSSZoom() {
+    const container = document.querySelector('.container');
+    if (zoomLevel === 1) {
+      container.style.transform = '';
+      container.style.transformOrigin = '';
+    } else {
+      container.style.transform = 'scale(' + zoomLevel + ')';
+      container.style.transformOrigin = 'top left';
+    }
+  }
+
+  function applyZoom() {
+    zoomLevel = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, zoomLevel));
+    // Use CSS transform for zoom (keeps left edge fixed, overflows right)
+    // rather than native Tauri zoom (scales from center, breaks horizontal scroll)
+    applyCSSZoom();
+    localStorage.setItem('mdviewer-zoom', zoomLevel.toString());
+    document.getElementById('zoom-reset-btn').textContent = Math.round(zoomLevel * 100) + '%';
+  }
+
+  document.getElementById('zoom-in-btn').addEventListener('click', () => {
+    zoomLevel += ZOOM_STEP;
+    applyZoom();
+  });
+
+  document.getElementById('zoom-out-btn').addEventListener('click', () => {
+    zoomLevel -= ZOOM_STEP;
+    applyZoom();
+  });
+
+  document.getElementById('zoom-reset-btn').addEventListener('click', () => {
+    zoomLevel = 1.0;
+    applyZoom();
+  });
+
+  // Keyboard shortcuts: Cmd/Ctrl + +/- for zoom
+  document.addEventListener('keydown', (e) => {
+    if ((e.metaKey || e.ctrlKey) && e.key === '=') {
+      e.preventDefault();
+      zoomLevel += ZOOM_STEP;
+      applyZoom();
+    } else if ((e.metaKey || e.ctrlKey) && e.key === '-') {
+      e.preventDefault();
+      zoomLevel -= ZOOM_STEP;
+      applyZoom();
+    } else if ((e.metaKey || e.ctrlKey) && e.key === '0') {
+      e.preventDefault();
+      zoomLevel = 1.0;
+      applyZoom();
+    }
+  });
+
+  // Apply saved zoom on load (deferred so Tauri bridge is ready)
+  requestAnimationFrame(() => { applyZoom(); });
 
   // Open file — use hidden <input type="file"> for reliable cross-platform picking
   openBtn.addEventListener('click', () => {

@@ -1227,4 +1227,74 @@ mod tests {
             errors.join("\n")
         );
     }
+
+    // ─── Task 18: Zoom support ──────────────────────────────────────────────────
+
+    /// Verify that the frontend HTML has zoom buttons and zoom logic.
+    /// Catches regressions where zoom controls are accidentally removed.
+    #[test]
+    fn test_zoom_buttons_exist_in_html() {
+        let html = std::fs::read_to_string(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .parent()
+                .unwrap()
+                .join("dist/index.html"),
+        )
+        .expect("dist/index.html must exist");
+
+        assert!(
+            html.contains("id=\"zoom-in-btn\""),
+            "HTML must have a zoom-in button with id='zoom-in-btn'"
+        );
+        assert!(
+            html.contains("id=\"zoom-out-btn\""),
+            "HTML must have a zoom-out button with id='zoom-out-btn'"
+        );
+        assert!(
+            html.contains("id=\"zoom-reset-btn\""),
+            "HTML must have a zoom-reset button with id='zoom-reset-btn'"
+        );
+    }
+
+    /// Verify that the frontend HTML has zoom level persistence in localStorage.
+    #[test]
+    fn test_zoom_persists_in_localstorage() {
+        let html = std::fs::read_to_string(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .parent()
+                .unwrap()
+                .join("dist/index.html"),
+        )
+        .expect("dist/index.html must exist");
+
+        assert!(
+            html.contains("mdviewer-zoom"),
+            "HTML must use 'mdviewer-zoom' key for localStorage zoom persistence"
+        );
+        assert!(
+            html.contains("localStorage.getItem") && html.contains("localStorage.setItem"),
+            "HTML must use localStorage.getItem and localStorage.setItem for zoom persistence"
+        );
+    }
+
+    /// Verify that the frontend HTML uses CSS transform for zoom (top-left origin).
+    #[test]
+    fn test_zoom_uses_css_transform() {
+        let html = std::fs::read_to_string(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .parent()
+                .unwrap()
+                .join("dist/index.html"),
+        )
+        .expect("dist/index.html must exist");
+
+        assert!(
+            html.contains("transform") && html.contains("scale("),
+            "HTML must use CSS transform: scale() for zoom"
+        );
+        assert!(
+            html.contains("top left"),
+            "HTML must use transformOrigin: top left so left edge stays fixed"
+        );
+    }
 }

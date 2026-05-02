@@ -85,6 +85,13 @@ mdviewer doc1.md doc2.md
 mdviewer --help
 ```
 
+### Zoom Control
+Toolbar buttons (+/−/100%) and keyboard shortcuts (Cmd/Ctrl +/−/0) control the zoom level, persisted in `localStorage`. Uses CSS `transform: scale()` with `transformOrigin: 'top left'` so the left edge stays fixed and content overflows to the right with a horizontal scrollbar.
+
+**Why CSS transform over native Tauri `setZoom`:** Native zoom scales the entire webview from its center, breaking horizontal scroll. CSS transform keeps the left anchor fixed and lets the browser handle overflow natively.
+
+**Range:** 50%–300% in 25% increments. Reset to 100% with the center button or Cmd+0.
+
 ### Installation Script
 
 `bin/install.sh` handles the full install workflow:
