@@ -43,7 +43,6 @@ mod commands {
             .collect();
 
         if !paths.is_empty() {
-            eprintln!("[mdviewer] Opening from CLI: {:?}", paths);
             let state = app.state::<CliPaths>();
             *state.0.lock().unwrap() = paths;
         }
@@ -106,10 +105,6 @@ mod commands {
         let label = format!("window-{}", window_count);
         let title = commands::window_title(display);
         let (x, y) = cascade_position(window_count);
-        eprintln!(
-            "[mdviewer] Creating window '{}' for '{}' at ({}, {})",
-            label, title, x, y
-        );
         // Pass file path as URL query parameter (URL-encoded) — available immediately on page load.
         let url = format!("index.html?file={}", urlencoding::encode(file_path));
         let _window = WebviewWindowBuilder::new(app, &label, WebviewUrl::App(url.into()))
@@ -330,7 +325,6 @@ fn open_file_plugin<R: tauri::Runtime>() -> tauri::plugin::TauriPlugin<R> {
                     if let Ok(path) = url.to_file_path() {
                         let path_str = path.to_string_lossy().into_owned();
                         if commands::is_md_file(&path_str) {
-                            eprintln!("[mdviewer] Apple Event opened: {}", path_str);
                             let app = app.app_handle().clone();
                             tauri::async_runtime::spawn(async move {
                                 let _ = app.clone().run_on_main_thread(move || {
@@ -374,7 +368,6 @@ pub fn run() {
             let _ = app.clone().run_on_main_thread(move || {
                 for arg in args.iter().skip(1) {
                     if !arg.starts_with('-') && commands::is_md_file(arg) {
-                        eprintln!("[mdviewer] Single-instance arg: {}", arg);
                         commands::open_or_create_window(&app, arg);
                     }
                 }
@@ -395,21 +388,17 @@ pub fn run() {
                 let title = commands::window_title(display);
                 if let Some(main_window) = app.get_webview_window("main") {
                     main_window.set_title(&title).ok();
-                    eprintln!("[mdviewer] Set main window title: {}", title);
                 }
             }
             for path_str in file_paths.iter().skip(1) {
                 let display = path_str.split('/').next_back().unwrap_or(path_str);
-                eprintln!("[mdviewer] Creating window for CLI file: {}", path_str);
                 let _ = commands::create_window_for_file(app.app_handle(), path_str, display);
             }
             Ok(())
         })
         .on_page_load(|webview, _payload| {
-            let label = webview.window().label().to_string();
-            eprintln!("[mdviewer] on_page_load: {}", label);
             // When the main window loads, check if it has a CLI file to open.
-            if label == "main" {
+            if webview.window().label() == "main" {
                 let app_handle = webview.app_handle().clone();
                 let paths = app_handle.state::<commands::CliPaths>();
                 let file_paths = paths.0.lock().unwrap().clone();
@@ -418,12 +407,7 @@ pub fn run() {
                         "(function() {{ if (typeof loadFile === 'function') {{ loadFile({}); }} }})();",
                         serde_json::to_string(first_path).unwrap_or_default()
                     );
-                    eprintln!("[mdviewer] on_page_load: calling loadFile({})", first_path);
-                    if let Err(e) = webview.eval(&js) {
-                        eprintln!("[mdviewer] on_page_load: eval failed: {}", e);
-                    }
-                } else {
-                    eprintln!("[mdviewer] on_page_load: no CLI paths found");
+                    let _ = webview.eval(&js);
                 }
             }
         })
