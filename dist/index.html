@@ -353,6 +353,90 @@
   .no-file .message { font-size: 16px; }
   .no-file .hint { font-size: 13px; margin-top: 8px; opacity: 0.7; }
 
+  /* Frontmatter box */
+  .frontmatter-box {
+    position: relative;
+    float: right;
+    width: 260px;
+    margin: 0 0 1em 1.5em;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--fm-bg, #f8f9fa);
+    overflow: hidden;
+    font-size: 13px;
+    z-index: 10;
+  }
+
+  [data-theme="dark"] .frontmatter-box {
+    --fm-bg: #161b22;
+  }
+
+  .frontmatter-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 6px 12px;
+    background: var(--fm-header-bg, #e9ecef);
+    cursor: pointer;
+    user-select: none;
+    font-weight: 600;
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--text);
+    opacity: 0.7;
+  }
+
+  [data-theme="dark"] .frontmatter-header {
+    --fm-header-bg: #21262d;
+  }
+
+  .frontmatter-header:hover { opacity: 1; }
+
+  .frontmatter-toggle {
+    font-size: 10px;
+    transition: transform 0.2s;
+  }
+
+  .frontmatter-toggle.collapsed {
+    transform: rotate(-90deg);
+  }
+
+  .frontmatter-content {
+    padding: 8px 12px;
+    max-height: 300px;
+    overflow-y: auto;
+    transition: max-height 0.2s ease;
+  }
+
+  .frontmatter-content.collapsed {
+    max-height: 0;
+    padding: 0 12px;
+    overflow: hidden;
+  }
+
+  .frontmatter-item {
+    display: flex;
+    padding: 3px 0;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .frontmatter-item:last-child { border-bottom: none; }
+
+  .frontmatter-key {
+    font-weight: 600;
+    color: var(--text);
+    opacity: 0.7;
+    min-width: 80px;
+    flex-shrink: 0;
+  }
+
+  .frontmatter-value {
+    color: var(--text);
+    opacity: 0.8;
+    word-break: break-word;
+  }
+
   /* Toolbar — hide/show based on whether a file is loaded */
 </style>
 </head>
@@ -619,8 +703,20 @@
   /** Core rendering: parse markdown → render Mermaid/KaTeX. */
   async function doRender(content) {
     try {
+      // Extract frontmatter separately for display
+      let frontmatter = null;
+      try {
+        const fmResult = await invoke('extract_fm', { markdown: content });
+        if (fmResult && fmResult[0]) {
+          frontmatter = JSON.parse(fmResult[0]);
+        }
+      } catch (_) { /* no frontmatter or parse error — ignore */ }
+
       const html = await invoke('render_md', { markdown: content });
       preview.innerHTML = html;
+
+      // Display frontmatter in collapsable box
+      renderFrontmatterBox(frontmatter);
 
       // Render Mermaid diagrams (Task 12 - already integrated)
       const mermaidBlocks = preview.querySelectorAll('pre code.language-mermaid');
@@ -654,6 +750,51 @@
 
   function showError(msg) {
     preview.innerHTML = `<div style="padding:2em;text-align:center;color:red"><h3>⚠️ Error</h3><p>${msg}</p></div>`;
+  }
+
+  /** Render frontmatter as a collapsable box in the preview. */
+  function renderFrontmatterBox(fm) {
+    if (!fm || typeof fm !== 'object') return;
+
+    // Remove existing frontmatter box if present
+    const existing = document.getElementById('frontmatter-box');
+    if (existing) existing.remove();
+
+    const box = document.createElement('div');
+    box.id = 'frontmatter-box';
+    box.className = 'frontmatter-box';
+
+    const header = document.createElement('div');
+    header.className = 'frontmatter-header';
+    header.innerHTML = '<span>Properties</span><span class="frontmatter-toggle" id="fm-toggle">▼</span>';
+
+    const content = document.createElement('div');
+    content.className = 'frontmatter-content';
+
+    for (const [key, value] of Object.entries(fm)) {
+      const item = document.createElement('div');
+      item.className = 'frontmatter-item';
+      const keyEl = document.createElement('span');
+      keyEl.className = 'frontmatter-key';
+      keyEl.textContent = key;
+      const valEl = document.createElement('span');
+      valEl.className = 'frontmatter-value';
+      // Serialize value for display
+      valEl.textContent = Array.isArray(value) ? value.join(', ') : String(value);
+      item.appendChild(keyEl);
+      item.appendChild(valEl);
+      content.appendChild(item);
+    }
+
+    // Toggle collapse/expand
+    header.addEventListener('click', () => {
+      content.classList.toggle('collapsed');
+      document.getElementById('fm-toggle').classList.toggle('collapsed');
+    });
+
+    box.appendChild(header);
+    box.appendChild(content);
+    preview.insertBefore(box, preview.firstChild);
   }
 
   // Startup: load file from URL query param (?file=...) for secondary windows.

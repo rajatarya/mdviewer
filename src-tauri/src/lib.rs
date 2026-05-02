@@ -628,17 +628,35 @@ fn preprocess_callouts(markdown: &str) -> String {
 
 // ─── Wikilink Preprocessing ──────────────────────────────────────────────────
 
-/// Preprocess wikilinks ([[link]]) into standard Markdown links
+/// Preprocess wikilinks ([[link]]) into standard Markdown links.
+/// Supports: [[Page]], [[#Heading]], [[Page#Heading]], [[Page|Display]]
 fn preprocess_wikilinks(markdown: &str) -> String {
     let re = Regex::new(r"\[\[(.*?)\]\]").unwrap();
     re.replace_all(markdown, |caps: &regex::Captures| {
         let target = &caps[1];
-        if let Some(rest) = target.strip_prefix('#') {
-            let heading = rest.to_lowercase();
-            format!("[{}]({})", rest, heading)
+        // Split on | for display text: [[Page|Display]]
+        let (link_target, display_text) = if let Some(pipe_pos) = target.find('|') {
+            (&target[..pipe_pos], target[pipe_pos + 1..].to_string())
         } else {
-            let link = target.to_lowercase().replace(' ', "-") + ".html";
-            format!("[{}]({})", target, link)
+            (target, target.to_string())
+        };
+        if let Some(rest) = link_target.strip_prefix('#') {
+            // In-page anchor: [[#Heading]] or [[#Heading|Display]]
+            let heading = rest.to_lowercase().replace(' ', "-");
+            // Strip leading # from display text for clean rendering
+            let display = display_text.strip_prefix('#').unwrap_or(&display_text);
+            let anchor = format!("#{}", heading);
+            format!("[{}]({})", display, anchor)
+        } else if link_target.contains('#') {
+            // Page with anchor: [[Page#Heading]] or [[Page#Heading|Display]]
+            let parts: Vec<&str> = link_target.splitn(2, '#').collect();
+            let page = parts[0].to_lowercase().replace(' ', "-") + ".html";
+            let anchor = parts[1].to_lowercase().replace(' ', "-");
+            format!("[{}]({}#{})", display_text, page, anchor)
+        } else {
+            // Simple page link: [[Page]] or [[Page|Display]]
+            let link = link_target.to_lowercase().replace(' ', "-") + ".html";
+            format!("[{}]({})", display_text, link)
         }
     })
     .into_owned()
@@ -647,9 +665,11 @@ fn preprocess_wikilinks(markdown: &str) -> String {
 // ─── Main Rendering Pipeline ─────────────────────────────────────────────────
 
 /// Render markdown string to sanitized HTML.
-/// Fenced and inline code blocks are extracted first via placeholders to prevent
-/// downstream preprocessors (emoji, math, wikilinks, callouts) from corrupting
-/// their content. Blocks are restored before markdown parsing.
+/// Fenced code blocks are extracted first (so `---` inside code doesn't
+/// interfere with frontmatter detection), then frontmatter is stripped,
+/// then inline code is extracted. All placeholders are restored before
+/// markdown parsing. Downstream preprocessors (emoji, math, wikilinks,
+/// callouts) operate on the cleaned content.
 pub fn render_markdown(markdown: &str) -> String {
     // Phase 0 — Extract fenced blocks so regex preprocessors don't alter code.
     let fence_re = Regex::new(r"(?s)```[^\n`]*\n.*?```").unwrap();
@@ -662,13 +682,27 @@ pub fn render_markdown(markdown: &str) -> String {
         })
         .into_owned();
 
+    // Phase 0a — Strip YAML frontmatter so delimiters don't render as horizontal rules.
+    // Must happen after fenced block extraction (so `---` inside code is safe) but
+    // before inline code extraction (so `$...$` in inline code is protected).
+    let without_frontmatter = if let Some(rest) = without_fences.strip_prefix("---\n") {
+        if let Some(end_pos) = rest.find("\n---\n") {
+            &rest[end_pos + 5..]
+        } else {
+            &without_fences
+        }
+    } else {
+        &without_fences
+    };
+    let without_frontmatter = without_frontmatter.to_string();
+
     // Phase 0b — Extract inline code (single backticks) for the same reason.
     // Prevents emoji/math/wikilink preprocessors from matching inside code.
     // Store the FULL match (including backticks) so restoration is exact.
     let inline_re = Regex::new(r"`[^`]+`").unwrap();
     let mut inline_blocks: Vec<String> = Vec::new();
     let without_inline = inline_re
-        .replace_all(&without_fences, |caps: &regex::Captures| {
+        .replace_all(&without_frontmatter, |caps: &regex::Captures| {
             let idx = inline_blocks.len();
             inline_blocks.push(caps[0].to_string());
             format!("\x00INLINE_CODE_{}\x00", idx)
@@ -1356,5 +1390,174 @@ mod tests {
             html.contains("top left"),
             "HTML must use transformOrigin: top left so left edge stays fixed"
         );
+    }
+
+    // ─── Wikilink edge cases ───────────────────────────────────────────────────
+
+    #[test]
+    fn it_preserves_wikilinks_in_inline_code() {
+        let input = "See `[[My Page]]` for details";
+        let output = render_markdown(input);
+        assert!(
+            output.contains("[[My Page]]"),
+            "wikilinks inside inline code must not be converted. Output: {}",
+            output
+        );
+    }
+
+    #[test]
+    fn it_preserves_wikilinks_in_fenced_code() {
+        let input = "```\n[[My Page]]\n```";
+        let output = render_markdown(input);
+        assert!(
+            output.contains("[[My Page]]"),
+            "wikilinks inside fenced code must not be converted. Output: {}",
+            output
+        );
+    }
+
+    #[test]
+    fn it_resolves_wikilink_with_hash_target() {
+        let input = "[[#Section Name]]";
+        let output = render_markdown(input);
+        assert!(
+            output.contains(r##"href="#section-name""##),
+            "intra-page wikilink should produce hash anchor. Output: {}",
+            output
+        );
+        assert!(output.contains("Section Name"));
+    }
+
+    #[test]
+    fn it_resolves_wikilink_with_page_and_hash() {
+        let input = "[[Other Page#Heading]]";
+        let output = render_markdown(input);
+        assert!(
+            output.contains(r#"href="other-page.html#heading""#),
+            "page+hash wikilink should produce both. Output: {}",
+            output
+        );
+    }
+
+    #[test]
+    fn it_resolves_wikilink_with_display_text() {
+        let input = "[[My Page|Custom Text]]";
+        let output = render_markdown(input);
+        assert!(
+            output.contains(r#"href="my-page.html""#),
+            "wikilink with display text should produce correct href. Output: {}",
+            output
+        );
+        assert!(output.contains("Custom Text"));
+    }
+
+    // ─── Callout edge cases ────────────────────────────────────────────────────
+
+    #[test]
+    fn it_preserves_callout_syntax_in_inline_code() {
+        let input = "Use `> [!NOTE]` for callouts";
+        let output = render_markdown(input);
+        // HTML escaping turns > into &gt; inside <code>
+        assert!(
+            output.contains("[!NOTE]"),
+            "callout syntax inside inline code must not be converted. Output: {}",
+            output
+        );
+        assert!(output.contains("<code>"));
+    }
+
+    #[test]
+    fn it_preserves_callout_syntax_in_fenced_code() {
+        let input = "```\n> [!NOTE]\n> Test\n```";
+        let output = render_markdown(input);
+        // HTML escaping turns > into &gt; inside <pre><code>
+        assert!(
+            output.contains("[!NOTE]"),
+            "callout syntax inside fenced code must not be converted. Output: {}",
+            output
+        );
+    }
+
+    #[test]
+    fn it_renders_callout_caution() {
+        let input = "> [!CAUTION]\n> Danger ahead";
+        let output = render_markdown(input);
+        assert!(output.contains(r#"class="callout caution""#));
+        assert!(output.contains("Danger ahead"));
+    }
+
+    #[test]
+    fn it_renders_callout_important() {
+        let input = "> [!IMPORTANT]\n> Critical info";
+        let output = render_markdown(input);
+        assert!(output.contains(r#"class="callout important""#));
+        assert!(output.contains("Critical info"));
+    }
+
+    // ─── Frontmatter integration ───────────────────────────────────────────────
+
+    #[test]
+    fn it_strips_frontmatter_from_render_markdown() {
+        let input = "---\ntitle: Test\n---\n# Hello";
+        let output = render_markdown(input);
+        assert!(
+            !output.contains("---"),
+            "frontmatter delimiters should be stripped from output. Output: {}",
+            output
+        );
+        assert!(output.contains("<h1>Hello</h1>"));
+    }
+
+    #[test]
+    fn it_strips_frontmatter_with_yaml_content() {
+        let input = "---\ntitle: Test Doc\ndate: 2024-01-01\ntags:\n  - rust\n---\n# Content";
+        let output = render_markdown(input);
+        assert!(
+            !output.contains("title:"),
+            "frontmatter YAML should not appear in output. Output: {}",
+            output
+        );
+        assert!(output.contains("<h1>Content</h1>"));
+    }
+
+    // ─── Math edge cases ───────────────────────────────────────────────────────
+
+    #[test]
+    fn it_preserves_math_syntax_in_inline_code() {
+        let input = "Use `$E=mc^2$` for energy";
+        let output = render_markdown(input);
+        assert!(
+            output.contains("$E=mc^2$"),
+            "math syntax inside inline code must not be converted. Output: {}",
+            output
+        );
+    }
+
+    #[test]
+    fn it_preserves_math_syntax_in_fenced_code() {
+        let input = "```\n$$\\int_0^\\infty x^2 dx$$\n```";
+        let output = render_markdown(input);
+        assert!(
+            output.contains("$$"),
+            "math syntax inside fenced code must not be converted. Output: {}",
+            output
+        );
+    }
+
+    #[test]
+    fn it_handles_adjacent_inline_math() {
+        let input = "$a$ and $b$";
+        let output = render_markdown(input);
+        assert!(output.contains("<span class=\"math-inline\">a</span>"));
+        assert!(output.contains("<span class=\"math-inline\">b</span>"));
+    }
+
+    #[test]
+    fn it_handles_math_with_special_chars() {
+        let input = "$x > y$";
+        let output = render_markdown(input);
+        assert!(output.contains("<span class=\"math-inline\">"));
+        // > is HTML-escaped to &gt; inside the span
+        assert!(output.contains("x &gt; y") || output.contains("x > y"));
     }
 }
