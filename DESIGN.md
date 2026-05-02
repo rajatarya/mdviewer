@@ -52,7 +52,10 @@ Renders as:
 
 ### Wikilinks (Obsidian-style)
 - `[[My Document]]` → `<a href="my-document.html">My Document</a>`
-- `[[#Heading]]` → `<a href="#heading">Heading</a>` (intra-page links)
+- `[[#Heading]]` → `<a href="#heading">Heading</a>` (intra-page links, slugified)
+- `[[Page|Display]]` → `<a href="page.html">Display</a>` (custom display text)
+- `[[Page#Heading]]` → `<a href="page.html#heading">Page#Heading</a>` (page with anchor)
+- `[[Page#Heading|Display]]` → `<a href="page.html#heading">Display</a>` (page+anchor with display text)
 
 ### Callout Blocks (GitHub/Obsidian)
 - `> [!NOTE]` → `<div class="callout note">`
@@ -64,6 +67,10 @@ YAML frontmatter between `---` delimiters is extracted separately:
 ```rust
 let (frontmatter_json, content) = extract_frontmatter(md);
 ```
+
+`render_markdown()` automatically strips frontmatter so delimiters don't render as horizontal rules.
+
+The frontend displays frontmatter in a collapsable grey Properties box (top-right, overlapping the heading area). It calls `extract_fm()` to parse frontmatter and renders key-value pairs in a toggleable panel.
 
 ### CLI Support
 Uses `tauri-plugin-cli` (v2) for structured command-line argument parsing.
@@ -118,13 +125,27 @@ The wrapper script intercepts `--help`/`-h` to print usage without launching the
 - ✅ Table rendering
 - ✅ Task list rendering
 - ✅ Wikilink resolution
+- ✅ Wikilink with hash target (`[[#Heading]]`)
+- ✅ Wikilink with display text (`[[Page|Display]]`)
+- ✅ Wikilink with page+hash (`[[Page#Heading]]`)
+- ✅ Wikilink preservation in code blocks
 - ✅ Emoji shortcode rendering
+- ✅ Emoji shortcode with `+` (`:+1:`)
+- ✅ Emoji preservation in code blocks
+- ✅ Unknown emoji shortcode preservation
 - ✅ Inline math rendering
 - ✅ Display math rendering
 - ✅ Math XSS sanitization
+- ✅ Math preservation in code blocks
+- ✅ Adjacent inline math
+- ✅ Math with special characters
 - ✅ Callout (note) rendering
 - ✅ Callout (warning) rendering
 - ✅ Callout (foldable) rendering
+- ✅ Callout (caution) rendering
+- ✅ Callout (important) rendering
+- ✅ Callout preservation in code blocks
 - ✅ Footnote rendering
 - ✅ Frontmatter extraction
+- ✅ Frontmatter stripping in render_markdown
 - ✅ No frontmatter handling
