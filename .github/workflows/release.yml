@@ -55,7 +55,7 @@ jobs:
         with:
           tag_name: ${{ github.ref_name }}
           name: "Markdown Viewer v${{ steps.version.outputs.VERSION }}"
-          body: "Changelog for Markdown Viewer ${{ steps.version.outputs.VERSION }}."
+          generate_release_notes: true
           draft: false
           prerelease: false
           files: ${{ steps.dmg.outputs.DMG_PATH }}

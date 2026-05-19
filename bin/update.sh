@@ -41,6 +41,17 @@ fail() {
 # ── Get local version ────────────────────────────────────────────────────────
 
 get_local_version() {
+  # Prefer the installed app's bundle version over Cargo.toml
+  local info_plist="${APPS_DIR}/${APP_BUNDLE}/Contents/Info.plist"
+  if [ -f "$info_plist" ]; then
+    local ver
+    ver=$(defaults read "$info_plist" CFBundleShortVersionString 2>/dev/null) || true
+    if [ -n "$ver" ]; then
+      echo "$ver"
+      return
+    fi
+  fi
+  # Fallback: read from Cargo.toml (for running from source tree)
   if [ -f "src-tauri/Cargo.toml" ]; then
     sed -n 's/^version = "\(.*\)"/\1/p' src-tauri/Cargo.toml | head -1
   else
@@ -76,7 +87,7 @@ get_latest_release() {
     fail "No .dmg asset found in the latest release."
   fi
 
-  echo "${tag}|${dmg_url}"
+  echo "${tag#v}|${dmg_url}"
 }
 
 # ── Compare versions ────────────────────────────────────────────────────────
@@ -161,9 +172,10 @@ case "${1:-}" in
     local_ver=$(get_local_version)
     latest_info=$(get_latest_release)
     latest_tag="${latest_info%%|*}"
+    latest_ver="${latest_info%%|*}"
     echo "Local:   ${local_ver}"
     echo "Latest:  ${latest_tag}"
-    if version_gt "$latest_tag" "$local_ver"; then
+    if version_gt "$latest_ver" "$local_ver"; then
       info "New version available: ${latest_tag}"
       echo "  Run './bin/update.sh' to install."
       exit 0
@@ -189,17 +201,18 @@ case "${1:-}" in
 
     latest_info=$(get_latest_release)
     latest_tag="${latest_info%%|*}"
+    latest_ver="${latest_info%%|*}"
     dmg_url="${latest_info#*|}"
 
     echo "  Latest:  ${latest_tag}"
     echo ""
 
-    if [ "$latest_tag" = "v${local_ver}" ]; then
+    if [ "$latest_ver" = "$local_ver" ]; then
       info "Already up to date! (v${local_ver})"
       exit 0
     fi
 
-    if version_gt "$latest_tag" "$local_ver"; then
+    if version_gt "$latest_ver" "$local_ver"; then
       warn "New version available: ${latest_tag}"
       read -r "confirm=?" "Install ${latest_tag}? (y/n): "
       if [[ "$confirm" != [yY]* ]]; then
