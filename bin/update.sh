@@ -94,15 +94,19 @@ get_latest_release() {
 
 version_gt() {
   # Returns 0 (true) if $1 > $2
-  [ "$1" = "$2" ] && return 1
-  local IFS='.'
-  local i
-  set -- "$1" "$2"
-  for i in 1 2 3 4; do
-    local a="${1:-0}" b="${2:-0}"
+  local v1="${1#v}" v2="${2#v}"
+  [ "$v1" = "$v2" ] && return 1
+
+  IFS='.' read -ra p1 <<< "$v1"
+  IFS='.' read -ra p2 <<< "$v2"
+
+  local max=${#p1[@]}
+  [ ${#p2[@]} -gt "$max" ] && max=${#p2[@]}
+
+  for ((i = 0; i < max; i++)); do
+    local a="${p1[$i]:-0}" b="${p2[$i]:-0}"
     if [ "$a" -gt "$b" ] 2>/dev/null; then return 0; fi
     if [ "$a" -lt "$b" ] 2>/dev/null; then return 1; fi
-    shift 2
   done
   return 1
 }
@@ -214,7 +218,8 @@ case "${1:-}" in
 
     if version_gt "$latest_ver" "$local_ver"; then
       warn "New version available: ${latest_tag}"
-      read -r "confirm=?" "Install ${latest_tag}? (y/n): "
+      printf "Install %s? (y/n): " "$latest_tag"
+      read -r confirm
       if [[ "$confirm" != [yY]* ]]; then
         info "Aborted."
         exit 0
