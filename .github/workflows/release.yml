@@ -9,7 +9,7 @@ permissions:
   contents: write
 
 jobs:
-  release:
+  build:
     name: Build and upload release
     runs-on: macos-latest
     steps:
@@ -38,12 +38,15 @@ jobs:
         run: npm install -g @tauri-apps/cli
 
       - name: Build Tauri app
-        uses: tauri-apps/tauri-action@v0
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: cd src-tauri && cargo tauri build
+
+      - name: Upload release asset
+        uses: softprops/action-gh-release@v2
         with:
-          tagName: ${{ github.ref_name }}
-          releaseName: "Markdown Viewer v${{ steps.version.outputs.VERSION }}"
-          releaseBody: "Changelog for Markdown Viewer ${{ steps.version.outputs.VERSION }}."
-          releaseDraft: false
+          tag_name: ${{ github.ref_name }}
+          name: "Markdown Viewer v${{ steps.version.outputs.VERSION }}"
+          body: "Changelog for Markdown Viewer ${{ steps.version.outputs.VERSION }}."
+          draft: false
           prerelease: false
+          files: |
+            src-tauri/target/release/bundle/macos/*.dmg
