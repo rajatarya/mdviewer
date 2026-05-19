@@ -36,10 +36,10 @@ jobs:
           node-version: 20
 
       - name: Install Tauri CLI
-        run: cargo install cargo-tauri
+        run: npm install -g @tauri-apps/cli
 
       - name: Build Tauri app
-        run: cd src-tauri && cargo tauri build
+        run: cd src-tauri && tauri build
 
       - name: Upload release asset
         uses: softprops/action-gh-release@v2
