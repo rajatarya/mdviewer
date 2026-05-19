@@ -48,6 +48,7 @@ jobs:
           DMG_PATH=$(find target/release/bundle/dmg -name "*.dmg" 2>/dev/null | head -1)
           echo "DMG_PATH=$DMG_PATH" >> "$GITHUB_OUTPUT"
           echo "Found: $DMG_PATH"
+          [ -n "$DMG_PATH" ] || { echo "No .dmg found"; exit 1; }
 
       - name: Upload release asset
         uses: softprops/action-gh-release@v2
