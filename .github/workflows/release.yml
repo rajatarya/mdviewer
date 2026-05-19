@@ -41,6 +41,13 @@ jobs:
       - name: Build Tauri app
         run: cd src-tauri && tauri build
 
+      - name: Find DMG assets
+        id: dmg
+        run: |
+          DMG_PATH=$(find src-tauri/target/release/bundle/macos -name "*.dmg" 2>/dev/null | head -1)
+          echo "DMG_PATH=$DMG_PATH" >> "$GITHUB_OUTPUT"
+          echo "Found: $DMG_PATH"
+
       - name: Upload release asset
         uses: softprops/action-gh-release@v2
         with:
@@ -49,5 +56,4 @@ jobs:
           body: "Changelog for Markdown Viewer ${{ steps.version.outputs.VERSION }}."
           draft: false
           prerelease: false
-          files: |
-            src-tauri/target/release/bundle/macos/*.dmg
+          files: ${{ steps.dmg.outputs.DMG_PATH }}
