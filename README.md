@@ -28,11 +28,20 @@
 | Category | Supported |
 |---|---|
 | **GitHub Flavored Markdown** | Tables, task lists, strikethrough, autolinks, fenced code blocks |
-| **Obsidian-style** | Wikilinks `[[Page]]`, emoji shortcodes `:rocket:`, callouts `> [!NOTE]` |
+| **Obsidian-style** | Wikilinks `[[Page\|label]]`, emoji shortcodes `:rocket:`, callouts `> [!NOTE]` |
 | **Math** | Inline `$E = mc^2$` and display `$$\int_0^\infty$$` via KaTeX |
 | **Diagrams** | Mermaid code blocks rendered with Mermaid.js |
+| **Frontmatter** | Title, description, tags, status badges, and full metadata box |
 | **Security** | All HTML sanitized via `ammonia` — XSS-safe by default |
 | **Performance** | Zero webview overhead, instant load, ~few MB binary |
+
+### Metadata Bar
+
+Frontmatter is rendered as a structured metadata bar above your content — title as heading, description as subtitle, tags and status as color-coded badges.
+
+### Properties Box
+
+A collapsible panel below content showing all frontmatter properties with icons, pill badges, and boolean toggles (✅/❌).
 
 ### Callout Types
 
@@ -42,6 +51,7 @@
 
 - `[[My Document]]` → links to `my-document.html`
 - `[[#Heading]]` → anchors within the page
+- `[[path\|label]]` → custom display text
 
 ---
 
@@ -52,13 +62,23 @@
 1. Go to the [Releases](https://github.com/rajatarya/mdviewer/releases) page
 2. Download the latest `.dmg` (Apple Silicon)
 3. Open the `.dmg` and drag **Markdown Viewer** to Applications
-4. **First launch**: macOS may show "app is damaged" or won't open due to quarantine. Run:
 
-   ```bash
-   xattr -cr /Applications/Markdown\ Viewer.app
-   ```
+**Updating to a new version:**
 
-   Then launch normally. This removes the quarantine attribute — a standard macOS security step for unsigned apps.
+```bash
+# Check for updates
+make update --check
+
+# Install the latest version
+make update
+```
+
+This downloads the latest release `.dmg`, mounts it, copies the app to `~/Applications/`, removes quarantine, and re-signs — all in one command. Requires `jq` (`brew install jq`).
+
+> **First launch:** macOS may show "app is damaged" due to quarantine. Run:
+> ```bash
+> xattr -cr /Applications/Markdown\ Viewer.app
+> ```
 
 > **Tested on**: macOS 26.4 (25E246) on Apple Silicon (M-series).
 
@@ -165,7 +185,7 @@ This app was designed and implemented entirely by AI coding agents.
 
 The initial implementation — every line of Rust, every CSS rule, every JavaScript function — was written by **[pi.dev](https://pi.dev)** using the **Qwen3.6-35B-A3B-GGUF:BF16** model by [Unsloth](http://unsloth.ai/) ([🤗 Hugging Face](https://huggingface.co/unsloth/Qwen3.6-35B-A3B-GGUF)), hosted locally via [llama.cpp](https://github.com/ggml-org/llama.cpp) on an M5 MacBook Pro (128 GB RAM).
 
-Subsequent fixes and architectural work — including the Tauri 2.x migration cleanup and the v1.4.0 macOS file-open deadlock investigation — were done by **[Claude](https://www.anthropic.com/claude)** (Anthropic), accessed through [Claude Code](https://claude.com/claude-code).
+Subsequent fixes and architectural work — including the Tauri 2.x migration cleanup, the v1.4.0 macOS file-open deadlock investigation, and the frontmatter rendering redesign — were done by **[Claude](https://www.anthropic.com/claude)** (Anthropic), accessed through [Claude Code](https://claude.com/claude-code).
 
 The result: a complete, tested, production-ready native macOS app — from zero to shipped — without a single human typing code.
 
@@ -175,47 +195,24 @@ The result: a complete, tested, production-ready native macOS app — from zero 
 
 ## Release Process
 
-> For maintainers. Steps to cut a new release.
+> Automated since v1.6.0 — see [.github/workflows/release.yml](.github/workflows/release.yml).
 
-### Prerequisites
-
-- Tauri CLI installed: `npm install -g @tauri-apps/cli`
-- Xcode Command Line Tools
-- GitHub CLI (`gh`) or access to GitHub releases page
-
-### Steps
+To cut a release:
 
 ```bash
 # 1. Ensure everything passes
 make all
 
-# 2. Update version in both places
-#    Cargo.toml (workspace.package.version)
-#    src-tauri/tauri.conf.json (version)
-# Use the same VERSION for both, e.g. 1.3.0
+# 2. Bump version in both files
+sed -i '' 's/version = ".*"/version = "1.7.0"/' src-tauri/Cargo.toml
+sed -i '' 's/"version": ".*"/"version": "1.7.0"/' src-tauri/tauri.conf.json
 
-# 3. Commit the version bump
-git add Cargo.toml src-tauri/tauri.conf.json
-git commit -m "chore(release): bump version to 1.3.0"
+# 3. Commit and tag
+git add -A && git commit -m "chore(release): bump version to 1.7.0"
+git tag v1.7.0 && git push origin main --tags
 
-# 4. Tag the commit
-git tag -a v1.3.0 -m "Release v1.3.0"
-
-# 5. Push to main
-git push origin main --tags
-
-# 6. Build the release bundle (creates .dmg + .app)
-cd src-tauri && cargo tauri build
-cd ..
-
-# 7. Upload to GitHub Releases
-gh release create v1.3.0 \
-  src-tauri/target/release/bundle/dmg/"Markdown Viewer"_1.3.0_aarch64.dmg \
-  --title "Release v1.3.0" \
-  --generate-notes
+# 4. GitHub Actions builds the .dmg and publishes the release automatically
 ```
-
-> **Note:** macOS may quarantine the .dmg. Users need to run `xattr -cr` on the app after install (documented in Installation section).
 
 ---
 
