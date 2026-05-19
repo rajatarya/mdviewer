@@ -1,4 +1,4 @@
-.PHONY: test build run fmt clippy clean all check
+.PHONY: test build run fmt clippy clean all check update
 
 # Run all tests (Rust)
 test:
@@ -52,6 +52,10 @@ clippy:
 # Clean build artifacts
 clean:
 	cd src-tauri && cargo clean
+
+# Update to latest version from GitHub Releases
+update:
+	./bin/update.sh
 
 # Run everything: fmt, clippy, test, build
 all: fmt clippy test build

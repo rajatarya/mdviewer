@@ -118,6 +118,28 @@ make uninstall        # remove wrapper + file associations
 
 The wrapper script intercepts `--help`/`-h` to print usage without launching the app, and passes all other arguments through to `open -a`. Users may need to add `~/.local/bin` to their `PATH` (most modern shells include it by default).
 
+### Update Workflow
+
+**Development:**
+- Tag a release: `git tag v1.6.0 && git push origin v1.6.0`
+- GitHub Actions builds the `.dmg` and creates a GitHub Release automatically (via `tauri-action@v0`)
+- Version is read from `src-tauri/Cargo.toml`
+
+**Installing/Updating:**
+```bash
+make update          # check and install latest from GitHub Releases
+make update --check  # only check for new version
+```
+
+The `bin/update.sh` script:
+1. Reads local version from `Cargo.toml`
+2. Queries GitHub Releases API for latest
+3. If newer: downloads `.dmg`, mounts it, copies `.app`, re-signs, registers file associations
+4. If current: prints "Already up to date"
+
+**For others:**
+They need a GitHub account to access releases. Run `make update` with `GITHUB_TOKEN` set if rate-limited.
+
 ## Test Coverage
 - ✅ Header rendering
 - ✅ Mermaid fence rendering

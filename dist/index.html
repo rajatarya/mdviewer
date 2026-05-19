@@ -353,11 +353,95 @@
   .no-file .message { font-size: 16px; }
   .no-file .hint { font-size: 13px; margin-top: 8px; opacity: 0.7; }
 
-  /* Frontmatter box */
+  /* Metadata bar — structured frontmatter display above content */
+  .fm-metadata-bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 12px;
+    margin: 0 0 1.5em;
+    padding: 10px 0;
+    border-bottom: 1px solid var(--border);
+    font-size: 14px;
+  }
+
+  .fm-metadata-bar .fm-title {
+    font-size: 1.75em;
+    font-weight: 700;
+    margin: 0;
+    padding: 0;
+    border: none;
+    line-height: 1.3;
+    flex-basis: 100%;
+  }
+
+  .fm-metadata-bar .fm-description {
+    font-size: 1.1em;
+    color: var(--text);
+    opacity: 0.65;
+    margin: 0;
+    padding: 0;
+    border: none;
+    font-weight: 400;
+    line-height: 1.5;
+    width: 100%;
+  }
+
+  .fm-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 8px;
+    border-radius: 12px;
+    font-size: 12px;
+    font-weight: 500;
+    white-space: nowrap;
+    background: var(--badge-bg, var(--code-bg));
+    color: var(--text);
+    opacity: 0.85;
+    border: 1px solid var(--border);
+  }
+
+  .fm-badge.fm-badge-tag {
+    background: var(--tag-bg, #e3f2fd);
+    border-color: var(--tag-border, #90caf9);
+    color: var(--tag-color, #1565c0);
+  }
+
+  [data-theme="dark"] .fm-badge.fm-badge-tag {
+    --tag-bg: #1a2a3a;
+    --tag-border: #2d5a8a;
+    --tag-color: #90caf9;
+  }
+
+  .fm-badge.fm-badge-status {
+    background: var(--status-bg, #e8f5e9);
+    border-color: var(--status-border, #a5d6a7);
+    color: var(--status-color, #2e7d32);
+  }
+
+  [data-theme="dark"] .fm-badge.fm-badge-status {
+    --status-bg: #1a3a1a;
+    --status-border: #2d6a3a;
+    --status-color: #81c784;
+  }
+
+  .fm-badge.fm-badge-date {
+    opacity: 0.7;
+    font-weight: 400;
+  }
+
+  .fm-tags-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+  }
+
+  /* Frontmatter properties box — collapsible panel for additional properties */
   .frontmatter-box {
     position: relative;
     float: right;
-    width: 260px;
+    width: 240px;
     margin: 0 0 1em 1.5em;
     border: 1px solid var(--border);
     border-radius: 6px;
@@ -419,15 +503,23 @@
     display: flex;
     padding: 3px 0;
     border-bottom: 1px solid var(--border);
+    align-items: flex-start;
+    gap: 6px;
   }
 
   .frontmatter-item:last-child { border-bottom: none; }
+
+  .frontmatter-icon {
+    font-size: 12px;
+    flex-shrink: 0;
+    margin-top: 1px;
+  }
 
   .frontmatter-key {
     font-weight: 600;
     color: var(--text);
     opacity: 0.7;
-    min-width: 80px;
+    min-width: 60px;
     flex-shrink: 0;
   }
 
@@ -435,6 +527,39 @@
     color: var(--text);
     opacity: 0.8;
     word-break: break-word;
+  }
+
+  .fm-pill {
+    display: inline-block;
+    padding: 1px 7px;
+    border-radius: 10px;
+    font-size: 11px;
+    background: var(--pill-bg, #e3f2fd);
+    color: var(--pill-color, #1565c0);
+    border: 1px solid var(--pill-border, #90caf9);
+    margin: 1px 2px;
+    white-space: nowrap;
+  }
+
+  [data-theme="dark"] .fm-pill {
+    --pill-bg: #1a2a3a;
+    --pill-border: #2d5a8a;
+    --pill-color: #90caf9;
+  }
+
+  .fm-props-section {
+    margin-top: 4px;
+    padding-top: 4px;
+    border-top: 1px solid var(--border);
+  }
+
+  .fm-props-section-label {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--text);
+    opacity: 0.5;
+    margin-bottom: 2px;
   }
 
   /* Toolbar — hide/show based on whether a file is loaded */
@@ -752,13 +877,189 @@
     preview.innerHTML = `<div style="padding:2em;text-align:center;color:red"><h3>⚠️ Error</h3><p>${msg}</p></div>`;
   }
 
-  /** Render frontmatter as a collapsable box in the preview. */
+  // ─── Frontmatter helpers ──────────────────────────────────────────────────────
+
+  const FM_SEMANTIC_KEYS = ['title', 'description', 'summary', 'excerpt'];
+  const FM_DATE_KEYS = ['date', 'created', 'updated', 'published', 'modified', 'lastmod'];
+  const FM_TAG_KEYS = ['tags', 'tag', 'categories', 'category', 'keywords'];
+  const FM_STATUS_KEYS = ['status', 'state', 'draft', 'type', 'layout'];
+
+  function formatDate(isoDate) {
+    if (!isoDate) return '';
+    const d = new Date(isoDate);
+    if (isNaN(d.getTime())) return String(isoDate);
+    return d.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+  }
+
+  function formatRelativeDate(isoDate) {
+    if (!isoDate) return '';
+    const d = new Date(isoDate);
+    if (isNaN(d.getTime())) return String(isoDate);
+    const now = new Date();
+    const diff = now - d;
+    const days = Math.floor(diff / 86400000);
+    if (days === 0) return 'today';
+    if (days === 1) return 'yesterday';
+    if (days < 7) return days + ' days ago';
+    if (days < 30) return Math.floor(days / 7) + ' week' + (Math.floor(days / 7) > 1 ? 's' : '') + ' ago';
+    return formatDate(isoDate);
+  }
+
+  function fmIcon(key) {
+    const k = key.toLowerCase();
+    if (k === 'title') return '📄';
+    if (k === 'date' || k === 'created' || k === 'updated' || k === 'published' || k === 'modified' || k === 'lastmod') return '📅';
+    if (k === 'description' || k === 'summary' || k === 'excerpt') return '📝';
+    if (k === 'tags' || k === 'tag' || k === 'categories' || k === 'category' || k === 'keywords') return '🏷️';
+    if (k === 'status' || k === 'state' || k === 'draft') return '📌';
+    if (k === 'author') return '👤';
+    if (k === 'url' || k === 'link' || k === 'href') return '🔗';
+    if (k === 'image' || k === 'cover' || k === 'thumbnail' || k === 'icon') return '🖼️';
+    return '📋';
+  }
+
+  function fmIsArrayLike(key, value) {
+    return FM_TAG_KEYS.includes(key.toLowerCase()) && Array.isArray(value);
+  }
+
+  function fmIsStatusLike(key) {
+    return FM_STATUS_KEYS.includes(key.toLowerCase());
+  }
+
+  function fmIsDateLike(key) {
+    return FM_DATE_KEYS.includes(key.toLowerCase());
+  }
+
+  function fmIsSemantic(key) {
+    return FM_SEMANTIC_KEYS.includes(key.toLowerCase());
+  }
+
+  function renderPill(value, isTag) {
+    const v = String(value).trim();
+    if (!v) return '';
+    if (isTag) {
+      return '<span class="fm-pill fm-badge-tag">' + v + '</span>';
+    }
+    return '<span class="fm-pill">' + v + '</span>';
+  }
+
+  // ─── Metadata bar: structured display for key frontmatter properties ──────────
+
+  /** Render the metadata bar with title, description, and badges above content. */
+  function renderMetadataBar(fm) {
+    if (!fm || typeof fm !== 'object') return null;
+
+    // Collect semantic properties
+    const title = fm.title || fm['doc-title'];
+    const description = fm.description || fm.summary || fm.excerpt;
+    const date = fm.date || fm.created || fm.updated;
+    const status = fm.status || fm.state || fm.draft;
+    const tags = Array.isArray(fm.tags) ? fm.tags : (typeof fm.tags === 'string' ? fm.tags.split(',').map(s => s.trim()).filter(Boolean) : null);
+    const categories = Array.isArray(fm.categories) ? fm.categories : null;
+
+    // Nothing to show
+    if (!title && !description && !date && !status && !tags && !categories) return null;
+
+    const bar = document.createElement('div');
+    bar.className = 'fm-metadata-bar';
+
+    // Title as prominent heading
+    if (title) {
+      const titleEl = document.createElement('h1');
+      titleEl.className = 'fm-title';
+      titleEl.textContent = String(title);
+      bar.appendChild(titleEl);
+    }
+
+    // Tags row
+    if (tags && tags.length > 0) {
+      const tagsRow = document.createElement('div');
+      tagsRow.className = 'fm-tags-row';
+      for (const tag of tags) {
+        const badge = document.createElement('span');
+        badge.className = 'fm-badge fm-badge-tag';
+        badge.textContent = tag;
+        tagsRow.appendChild(badge);
+      }
+      bar.appendChild(tagsRow);
+    }
+
+    if (categories && categories.length > 0) {
+      const catsRow = document.createElement('div');
+      catsRow.className = 'fm-tags-row';
+      for (const cat of categories) {
+        const badge = document.createElement('span');
+        badge.className = 'fm-badge fm-badge-tag';
+        badge.textContent = cat;
+        catsRow.appendChild(badge);
+      }
+      bar.appendChild(catsRow);
+    }
+
+    // Date badge
+    if (date) {
+      const dateBadge = document.createElement('span');
+      dateBadge.className = 'fm-badge fm-badge-date';
+      dateBadge.textContent = '📅 ' + formatDate(date);
+      bar.appendChild(dateBadge);
+    }
+
+    // Status badge
+    if (status) {
+      const statusBadge = document.createElement('span');
+      statusBadge.className = 'fm-badge fm-badge-status';
+      statusBadge.textContent = String(status);
+      bar.appendChild(statusBadge);
+    }
+
+    // Description as subtitle
+    if (description) {
+      const descEl = document.createElement('p');
+      descEl.className = 'fm-description';
+      descEl.textContent = String(description);
+      bar.appendChild(descEl);
+    }
+
+    return bar;
+  }
+
+  // ─── Enhanced Properties box ──────────────────────────────────────────────────
+
+  /** Render frontmatter as enhanced collapsable box with type icons and pills. */
   function renderFrontmatterBox(fm) {
     if (!fm || typeof fm !== 'object') return;
 
-    // Remove existing frontmatter box if present
-    const existing = document.getElementById('frontmatter-box');
-    if (existing) existing.remove();
+    // Remove existing frontmatter elements
+    const existingBar = document.getElementById('fm-metadata-bar');
+    if (existingBar) existingBar.remove();
+    const existingBox = document.getElementById('frontmatter-box');
+    if (existingBox) existingBox.remove();
+
+    // Render metadata bar first (title, description, key badges)
+    const metaBar = renderMetadataBar(fm);
+    if (metaBar) {
+      metaBar.id = 'fm-metadata-bar';
+      preview.insertBefore(metaBar, preview.firstChild);
+    }
+
+    // Remaining properties → Properties box (exclude semantic ones already in bar)
+    const excludedKeys = new Set([...FM_SEMANTIC_KEYS, ...FM_DATE_KEYS, ...FM_TAG_KEYS, ...FM_STATUS_KEYS]);
+    const remainingProps = Object.entries(fm).filter(([key]) => !excludedKeys.has(key.toLowerCase()));
+
+    if (remainingProps.length === 0) return;
+
+    // Group remaining props by section (simple: keys with underscores go to a section)
+    const grouped = {};
+    const flat = [];
+    for (const [key, value] of remainingProps) {
+      const section = key.includes('_') ? key.split('_')[0] : null;
+      if (section) {
+        if (!grouped[section]) grouped[section] = [];
+        grouped[section].push([key, value]);
+      } else {
+        flat.push([key, value]);
+      }
+    }
 
     const box = document.createElement('div');
     box.id = 'frontmatter-box';
@@ -771,19 +1072,72 @@
     const content = document.createElement('div');
     content.className = 'frontmatter-content';
 
-    for (const [key, value] of Object.entries(fm)) {
+    // Render flat properties
+    for (const [key, value] of flat) {
       const item = document.createElement('div');
       item.className = 'frontmatter-item';
+
+      const iconEl = document.createElement('span');
+      iconEl.className = 'frontmatter-icon';
+      iconEl.textContent = fmIcon(key);
+      item.appendChild(iconEl);
+
       const keyEl = document.createElement('span');
       keyEl.className = 'frontmatter-key';
       keyEl.textContent = key;
+      item.appendChild(keyEl);
+
       const valEl = document.createElement('span');
       valEl.className = 'frontmatter-value';
-      // Serialize value for display
-      valEl.textContent = Array.isArray(value) ? value.join(', ') : String(value);
-      item.appendChild(keyEl);
+      if (Array.isArray(value) && fmIsArrayLike(key, value)) {
+        // Tag-like array → pills
+        valEl.innerHTML = value.map(v => renderPill(v, true)).join('');
+      } else if (Array.isArray(value)) {
+        valEl.textContent = value.join(', ');
+      } else if (typeof value === 'boolean') {
+        valEl.textContent = value ? '✅' : '❌';
+      } else {
+        valEl.textContent = String(value);
+      }
       item.appendChild(valEl);
       content.appendChild(item);
+    }
+
+    // Render grouped sections
+    for (const [section, props] of Object.entries(grouped)) {
+      const sectionEl = document.createElement('div');
+      sectionEl.className = 'fm-props-section';
+      const label = document.createElement('div');
+      label.className = 'fm-props-section-label';
+      label.textContent = section;
+      sectionEl.appendChild(label);
+
+      for (const [key, value] of props) {
+        const item = document.createElement('div');
+        item.className = 'frontmatter-item';
+
+        const iconEl = document.createElement('span');
+        iconEl.className = 'frontmatter-icon';
+        iconEl.textContent = fmIcon(key);
+        item.appendChild(iconEl);
+
+        const keyEl = document.createElement('span');
+        keyEl.className = 'frontmatter-key';
+        keyEl.textContent = key.split('_').slice(1).join('_');
+        item.appendChild(keyEl);
+
+        const valEl = document.createElement('span');
+        valEl.className = 'frontmatter-value';
+        if (Array.isArray(value)) {
+          valEl.textContent = value.join(', ');
+        } else {
+          valEl.textContent = String(value);
+        }
+        item.appendChild(valEl);
+        content.appendChild(item);
+      }
+
+      content.appendChild(sectionEl);
     }
 
     // Toggle collapse/expand
@@ -794,7 +1148,13 @@
 
     box.appendChild(header);
     box.appendChild(content);
-    preview.insertBefore(box, preview.firstChild);
+
+    // Insert after the metadata bar, or at the beginning
+    if (metaBar) {
+      preview.insertBefore(box, metaBar.nextSibling);
+    } else {
+      preview.insertBefore(box, preview.firstChild);
+    }
   }
 
   // Startup: load file from URL query param (?file=...) for secondary windows.
