@@ -31,8 +31,8 @@ GREEN='\033[0;32m'
 YELLOW='\033[0;33m'
 NC='\033[0m'
 
-info() { echo -e "${GREEN}[update]${NC} $*"; }
-warn() { echo -e "${YELLOW}[update]${NC} $*"; }
+info() { echo -e "${GREEN}[update]${NC} $*" >&2; }
+warn() { echo -e "${YELLOW}[update]${NC} $*" >&2; }
 fail() {
   echo -e "${RED}[update]${NC} $*" >&2
   exit 1
@@ -51,8 +51,8 @@ get_local_version() {
       return
     fi
   fi
-  # Fallback: read from Cargo.toml (for running from source tree)
-  if [ -f "src-tauri/Cargo.toml" ]; then
+  # If no app installed, check if we're in a source tree
+  if [ -f "src-tauri/Cargo.toml" ] && [ -d "src-tauri" ]; then
     sed -n 's/^version = "\(.*\)"/\1/p' src-tauri/Cargo.toml | head -1
   else
     echo "0.0.0"
@@ -124,9 +124,11 @@ download_and_mount() {
   curl -fSL -o "${tmp_dir}/${APP_BUNDLE%.app}.dmg" "$dmg_url"
 
   info "Mounting .dmg..."
-  local mount_point
-  mount_point=$(hdiutil attach -nobrowse -noautoopen "${tmp_dir}/${APP_BUNDLE%.app}.dmg" 2>/dev/null | grep '^/Volumes' | head -1)
-  [ -n "$mount_point" ] || fail "Failed to mount .dmg"
+  local attach_output mount_point
+  attach_output=$(hdiutil attach -nobrowse -noautoopen "${tmp_dir}/${APP_BUNDLE%.app}.dmg" 2>&1)
+  mount_point=$(echo "$attach_output" | grep '/Volumes' | sed 's/.*\(\/Volumes\/.*\)/\1/' | grep -i 'markdown' | head -1)
+  [ -z "$mount_point" ] && mount_point=$(echo "$attach_output" | grep '/Volumes' | sed 's/.*\(\/Volumes\/.*\)/\1/' | head -1)
+  [ -n "$mount_point" ] || fail "Failed to mount .dmg\nOutput: ${attach_output}"
 
   echo "$mount_point"
 }
@@ -211,17 +213,32 @@ case "${1:-}" in
     echo "  Latest:  ${latest_tag}"
     echo ""
 
-    if [ "$latest_ver" = "$local_ver" ]; then
+    # Check if app is actually installed
+    if [ ! -d "${APPS_DIR}/${APP_BUNDLE}" ]; then
+      warn "App not found at ${APPS_DIR}/${APP_BUNDLE}"
+    elif [ "$latest_ver" = "$local_ver" ]; then
       info "Already up to date! (v${local_ver})"
       exit 0
     fi
 
     if version_gt "$latest_ver" "$local_ver"; then
       warn "New version available: ${latest_tag}"
-      printf "Install %s? (y/n): " "$latest_tag"
-      read -r confirm
-      if [[ "$confirm" != [yY]* ]]; then
-        info "Aborted."
+      if [ -t 0 ]; then
+        printf "Install %s? (y/n): " "$latest_tag"
+        read -r confirm || confirm="n"
+        if [[ "$confirm" != [yY]* ]]; then
+          info "Aborted."
+          exit 0
+        fi
+      else
+        info "Assuming yes (not a TTY)"
+      fi
+    elif [ "$latest_ver" = "$local_ver" ]; then
+      # Versions match but app might not be installed
+      if [ ! -d "${APPS_DIR}/${APP_BUNDLE}" ]; then
+        info "Installing (app not found)..."
+      else
+        info "Already up to date! (v${local_ver})"
         exit 0
       fi
     else
