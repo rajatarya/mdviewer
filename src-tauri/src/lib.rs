@@ -177,6 +177,11 @@ mod commands {
     }
 
     #[command]
+    pub fn render_md_for_file(markdown: &str, base_dir: &str) -> String {
+        render_markdown_with_base(markdown, Some(base_dir))
+    }
+
+    #[command]
     pub fn extract_fm(markdown: &str) -> (String, String) {
         extract_frontmatter(markdown)
     }
@@ -349,7 +354,7 @@ fn open_file_plugin<R: tauri::Runtime>() -> tauri::plugin::TauriPlugin<R> {
 pub fn run() {
     use commands::{
         create_window, export_html, extract_fm, get_cli_paths, get_window_file, read_file,
-        render_md, set_window_title, watch_file,
+        render_md, render_md_for_file, set_window_title, watch_file,
     };
     let paths = commands::CliPaths(std::sync::Mutex::new(Vec::new()));
     let window_files =
@@ -413,6 +418,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             render_md,
+            render_md_for_file,
             extract_fm,
             read_file,
             watch_file,
@@ -646,6 +652,93 @@ fn preprocess_wikilinks(markdown: &str) -> String {
     .into_owned()
 }
 
+// ─── Image Path Resolution ───────────────────────────────────────────────────
+
+/// Simple base64 encoder for inline image data URIs.
+/// Avoids adding a base64 crate dependency.
+fn base64_encode(data: &[u8]) -> String {
+    const CHARS: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut result = String::new();
+    let mut i = 0;
+    let len = data.len();
+    while i < len {
+        let remaining = len - i;
+        let b0 = data[i] as u32;
+        if remaining > 1 {
+            let b1 = data[i + 1] as u32;
+            if remaining > 2 {
+                let b2 = data[i + 2] as u32;
+                let buf = (b0 << 16) | (b1 << 8) | b2;
+                result.push(CHARS[(buf >> 18) as usize] as char);
+                result.push(CHARS[((buf >> 12) & 0x3F) as usize] as char);
+                result.push(CHARS[((buf >> 6) & 0x3F) as usize] as char);
+                result.push(CHARS[(buf & 0x3F) as usize] as char);
+                i += 3;
+            } else {
+                let buf = (b0 << 16) | (b1 << 8);
+                result.push(CHARS[(buf >> 18) as usize] as char);
+                result.push(CHARS[((buf >> 12) & 0x3F) as usize] as char);
+                result.push(CHARS[((buf >> 6) & 0x3F) as usize] as char);
+                result.push('=');
+                i += 2;
+            }
+        } else {
+            let buf = b0 << 16;
+            result.push(CHARS[(buf >> 18) as usize] as char);
+            result.push(CHARS[((buf >> 12) & 0x3F) as usize] as char);
+            result.push('=');
+            result.push('=');
+            i += 1;
+        }
+    }
+    result
+}
+
+/// Read an image file and return a base64 data URI.
+/// Returns None if the file can't be read or the format is unsupported.
+fn read_image_as_data_uri(path: &std::path::Path) -> Option<String> {
+    let data = std::fs::read(path).ok()?;
+    let mime = match path.extension().and_then(|e| e.to_str()) {
+        Some("png") => "image/png",
+        Some("jpg" | "jpeg") => "image/jpeg",
+        Some("gif") => "image/gif",
+        Some("svg") => "image/svg+xml",
+        Some("webp") => "image/webp",
+        Some("bmp") => "image/bmp",
+        Some("ico") => "image/x-icon",
+        Some("tiff" | "tif") => "image/tiff",
+        Some("avif") => "image/avif",
+        _ => return None,
+    };
+    let b64 = base64_encode(&data);
+    Some(format!("data:{};base64,{}", mime, b64))
+}
+
+/// Resolve relative image paths in markdown to base64 data URIs.
+/// Only processes paths that are NOT absolute URLs (http://, https://, data:, /).
+/// Runs before markdown parsing so the parser sees data URIs natively.
+fn resolve_image_paths(text: &str, base_dir: &str) -> String {
+    let img_re = Regex::new(r"!\[([^\]]*)\]\(([^)]+)\)").unwrap();
+    img_re
+        .replace_all(text, |caps: &regex::Captures| {
+            let url = &caps[2];
+            if url.starts_with("http://")
+                || url.starts_with("https://")
+                || url.starts_with("data:")
+                || url.starts_with('/')
+                || url.starts_with('#')
+            {
+                return caps[0].to_string();
+            }
+            let full_path = std::path::Path::new(base_dir).join(url);
+            match read_image_as_data_uri(&full_path) {
+                Some(data_uri) => format!("![{}]({})", &caps[1], data_uri),
+                None => caps[0].to_string(),
+            }
+        })
+        .into_owned()
+}
+
 // ─── Main Rendering Pipeline ─────────────────────────────────────────────────
 
 /// Render markdown string to sanitized HTML.
@@ -655,6 +748,10 @@ fn preprocess_wikilinks(markdown: &str) -> String {
 /// markdown parsing. Downstream preprocessors (emoji, math, wikilinks,
 /// callouts) operate on the cleaned content.
 pub fn render_markdown(markdown: &str) -> String {
+    render_markdown_with_base(markdown, None)
+}
+
+fn render_markdown_with_base(markdown: &str, base_dir: Option<&str>) -> String {
     // Phase 0 — Extract fenced blocks so regex preprocessors don't alter code.
     let fence_re = Regex::new(r"(?s)```[^\n`]*\n.*?```").unwrap();
     let mut fence_blocks: Vec<String> = Vec::new();
@@ -714,6 +811,12 @@ pub fn render_markdown(markdown: &str) -> String {
         with_callouts = with_callouts.replace(&placeholder, block);
     }
 
+    // Phase 0c — Resolve relative image paths to data URIs (if base_dir provided).
+    // Runs after code restoration so code blocks are protected.
+    if let Some(base) = base_dir {
+        with_callouts = resolve_image_paths(&with_callouts, base);
+    }
+
     // 5. Parse markdown
     let mut options = Options::empty();
     options.insert(Options::ENABLE_GFM);
@@ -728,7 +831,7 @@ pub fn render_markdown(markdown: &str) -> String {
     Builder::new()
         .rm_tags(&["script"])
         .add_tags(&[
-            "table", "thead", "tbody", "tr", "th", "td", "input", "details", "summary",
+            "table", "thead", "tbody", "tr", "th", "td", "input", "details", "summary", "img",
         ])
         .add_tag_attributes("input", &["type", "checked"])
         .add_tag_attributes("code", &["class"])
@@ -736,6 +839,8 @@ pub fn render_markdown(markdown: &str) -> String {
         .add_tag_attributes("div", &["class"])
         .add_tag_attributes("details", &["class", "open"])
         .add_tag_attributes("summary", &["class"])
+        .add_tag_attributes("img", &["src", "alt", "width", "height", "class"])
+        .add_url_schemes(&["data"])
         .clean(&unsafe_html)
         .to_string()
 }
@@ -1125,6 +1230,7 @@ mod tests {
         let registered: std::collections::HashSet<&str> = [
             // Custom commands (exact Rust function names)
             "render_md",
+            "render_md_for_file",
             "extract_fm",
             "read_file",
             "watch_file",
@@ -1260,6 +1366,7 @@ mod tests {
 
         let custom_commands: std::collections::HashSet<&str> = [
             "render_md",
+            "render_md_for_file",
             "extract_fm",
             "read_file",
             "watch_file",
@@ -1543,5 +1650,143 @@ mod tests {
         assert!(output.contains("<span class=\"math-inline\">"));
         // > is HTML-escaped to &gt; inside the span
         assert!(output.contains("x &gt; y") || output.contains("x > y"));
+    }
+
+    // ─── Local Image Resolution ─────────────────────────────────────────────
+
+    #[test]
+    fn it_preserves_absolute_url_images() {
+        // Absolute URLs must pass through unchanged
+        let input = "![alt](https://example.com/img.png)";
+        let output = render_markdown(input);
+        assert!(
+            output.contains("https://example.com/img.png"),
+            "absolute URL must be preserved. Output: {}",
+            output
+        );
+    }
+
+    #[test]
+    fn it_preserves_data_uri_images() {
+        // data: URIs must pass through unchanged
+        let input = "![alt](data:image/png;base64,iVBOR)";
+        let output = render_markdown(input);
+        assert!(
+            output.contains("data:image/png;base64,iVBOR"),
+            "data URIs must be preserved. Output: {}",
+            output
+        );
+    }
+
+    #[test]
+    fn it_preserves_absolute_path_images() {
+        // Absolute paths (starting with /) must pass through unchanged
+        let input = "![alt](/absolute/path/img.png)";
+        let output = render_markdown(input);
+        assert!(
+            output.contains("/absolute/path/img.png"),
+            "absolute paths must be preserved. Output: {}",
+            output
+        );
+    }
+
+    #[test]
+    fn it_resolves_relative_images_to_data_uri() {
+        // Create a temp dir with a small PNG-like file and test resolution
+        let dir = std::env::temp_dir().join("mdviewer_test_images");
+        std::fs::create_dir_all(&dir).unwrap();
+        let img_dir = dir.join("images");
+        std::fs::create_dir_all(&img_dir).unwrap();
+        let img_path = img_dir.join("test.png");
+        // Write minimal PNG (a valid but tiny PNG file)
+        let minimal_png: Vec<u8> = vec![
+            0x89, 0x50, 0x4E, 0x47, // PNG signature
+            0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D, // IHDR chunk
+            0x49, 0x48, 0x44, 0x52, 0x00, 0x00, 0x00, 0x01, // width=1
+            0x00, 0x00, 0x00, 0x01, // height=1
+            0x08, 0x02, 0x00, 0x00, // bit depth=8, color type=RGB
+            0x00, 0x00, 0x00, 0x90, // CRC (dummy)
+            0x77, 0x53, 0x48, 0x42, 0x00, 0x00, 0x00, 0x0A, // IDAT chunk
+            0x49, 0x44, 0x41, 0x54, 0x08, 0xD7, 0x63, 0x60, 0x00, 0x00, 0x00,
+            0x02, // CRC (dummy)
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // IEND chunk
+            0x49, 0x45, 0x4E, 0x44, 0xAE, 0x42, 0x60, 0x82,
+        ];
+        std::fs::write(&img_path, &minimal_png).unwrap();
+
+        // Use a relative path from dir to images/test.png
+        let markdown = "![test](images/test.png)";
+        let output = render_markdown_with_base(&markdown, Some(dir.to_str().unwrap()));
+        assert!(
+            output.contains("data:image/png;base64,"),
+            "relative image should become data URI. Output: {}",
+            output
+        );
+
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn it_resolves_relative_path_images() {
+        // Test with a relative path resolved against base_dir
+        let dir = std::env::temp_dir().join("mdviewer_test_images_rel");
+        std::fs::create_dir_all(&dir).unwrap();
+        let img_dir = dir.join("images");
+        std::fs::create_dir_all(&img_dir).unwrap();
+        let img_path = img_dir.join("photo.jpg");
+        // Write minimal JPEG-like content
+        let minimal_jpg: Vec<u8> = vec![
+            0xFF, 0xD8, 0xFF, 0xE0, // JPEG SOI + APP0
+            0x00, 0x10, 0x4A, 0x46, 0x49, 0x46, 0x00, 0x01, 0x01, 0x00, 0x00, 0x01, 0x00, 0x00,
+            0x00, 0x00, 0xFF, 0xD8,
+        ];
+        std::fs::write(&img_path, &minimal_jpg).unwrap();
+
+        // Relative path from dir to images/photo.jpg
+        let markdown = "![photo](images/photo.jpg)";
+        let output = render_markdown_with_base(&markdown, Some(dir.to_str().unwrap()));
+        assert!(
+            output.contains("data:image/jpeg;base64,"),
+            "relative image path should resolve to JPEG data URI. Output: {}",
+            output
+        );
+
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn it_preserves_relative_images_in_fenced_code() {
+        // Images inside fenced code blocks must not be resolved
+        let dir = std::env::temp_dir().join("mdviewer_test_img_code");
+        std::fs::create_dir_all(&dir).unwrap();
+        let input = "```\n![alt](images/img.png)\n```";
+        let output = render_markdown_with_base(input, Some(dir.to_str().unwrap()));
+        assert!(
+            output.contains("images/img.png"),
+            "image path inside fenced code must be preserved as-is. Output: {}",
+            output
+        );
+        assert!(
+            !output.contains("data:image"),
+            "no data URI should appear from inside fenced code. Output: {}",
+            output
+        );
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn it_preserves_missing_image_path() {
+        // Missing image file should keep the original markdown syntax
+        let dir = std::env::temp_dir().join("mdviewer_test_img_missing");
+        std::fs::create_dir_all(&dir).unwrap();
+        let input = "![missing](images/does-not-exist.png)";
+        let output = render_markdown_with_base(input, Some(dir.to_str().unwrap()));
+        // The original markdown syntax should render as an img tag with the original src
+        assert!(
+            output.contains("images/does-not-exist.png"),
+            "missing image should preserve original path. Output: {}",
+            output
+        );
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 }

@@ -9,8 +9,9 @@
 2. **Emoji Shortcodes** — `:rocket:` → `🚀` (50+ common emojis)
 3. **Wikilink Resolution** — `[[Page]]` → `<a href="page.html">`, `[[#Heading]]` → `<a href="#heading">`
 4. **Callout Processing** — `> [!NOTE]` → `<div class="callout note">`, `> [!TIP]+` → `<details>`
-5. **Markdown Parsing** — pulldown-cmark with GFM, Tables, TaskLists, Footnotes
-6. **HTML Sanitization** — ammonia with allowlist for tables, math, callouts, code
+5. **Local Image Resolution** — Relative `![...](path)` → base64 data URIs (Phase 0c)
+6. **Markdown Parsing** — pulldown-cmark with GFM, Tables, TaskLists, Footnotes
+7. **HTML Sanitization** — ammonia with allowlist for tables, math, callouts, code
 
 ## Security
 - **HTML Sanitization**: All rendered HTML passes through [ammonia](https://crates.io/crates/ammonia) with allowlist
@@ -49,6 +50,17 @@ Renders as:
 <p>Text<a href="#fn1" class="footnote-ref">1</a></p>
 <div class="footnote-definition" id="fn1"><sup>1</sup> Footnote</div>
 ```
+
+### Local Image Support
+Relative image paths (`![alt](images/foo.png)`) in markdown files opened from disk are resolved against the markdown file's directory, read into memory, and inlined as base64 data URIs. Remote URLs (`https://...`) and absolute paths (`/...`) pass through unchanged.
+
+**Implementation:**
+- Phase 0c in `render_markdown_with_base()` — after code restoration, before markdown parsing
+- `resolve_image_paths()` scans `![...](...)` patterns, replaces relative paths with `data:...;base64,...` URIs
+- `base64_encode()` — simple inline encoder (no crate dependency)
+- `read_image_as_data_uri()` — reads file, detects MIME from extension, encodes
+- Frontend passes `baseDir` (directory of the markdown file) via `render_md_for_file` command
+- Drag-drop and file-picker (no disk path) fall back to `render_md` without image resolution
 
 ### Wikilinks (Obsidian-style)
 - `[[My Document]]` → `<a href="my-document.html">My Document</a>`

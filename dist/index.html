@@ -742,7 +742,12 @@
       // Start file watching for live updates (Task 14)
       startWatching(filePath, content);
 
-      await doRender(content);
+      // Extract base directory from file path for local image resolution
+      const baseDir = filePath.lastIndexOf('/') >= 0
+        ? filePath.substring(0, filePath.lastIndexOf('/'))
+        : '';
+      currentBaseDir = baseDir;
+      await doRender(content, baseDir);
     } catch (err) {
       preview.innerHTML = `<p style="color:red">Error: ${err}</p>`;
     }
@@ -777,10 +782,13 @@
   });
 
   /** Listen for file-change events from the Rust backend. */
+  /** Track the base directory for file-change re-renders. */
+  let currentBaseDir = '';
+
   listen('mdviewer:file-changed', async (event) => {
     const newContent = event.payload;
     currentContent = newContent; // keep our copy in sync
-    await doRender(newContent);
+    await doRender(newContent, currentBaseDir);
   });
 
   /** Start background polling for file changes on the opened file. */
@@ -796,7 +804,7 @@
         // Simple diff detection
         if (content !== currentContent) {
           currentContent = content;
-          await doRender(content);
+          await doRender(content, currentBaseDir);
         }
       } catch (_) { /* file deleted or locked, ignore */ }
     };
@@ -826,7 +834,7 @@
   }
 
   /** Core rendering: parse markdown → render Mermaid/KaTeX. */
-  async function doRender(content) {
+  async function doRender(content, baseDir) {
     try {
       // Extract frontmatter separately for display
       let frontmatter = null;
@@ -837,7 +845,11 @@
         }
       } catch (_) { /* no frontmatter or parse error — ignore */ }
 
-      const html = await invoke('render_md', { markdown: content });
+      // Use render_md_for_file when baseDir is provided (file from disk with local images),
+      // fall back to render_md for drag-drop / file-picker (no base directory).
+      const html = baseDir
+        ? await invoke('render_md_for_file', { markdown: content, baseDir: baseDir })
+        : await invoke('render_md', { markdown: content });
       preview.innerHTML = html;
 
       // Display frontmatter in collapsable box
