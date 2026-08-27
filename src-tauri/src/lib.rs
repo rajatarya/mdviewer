@@ -42,6 +42,7 @@ mod commands {
             .filter(|p| is_md_file(p))
             .collect();
 
+        log::info!("init_cli_paths: args parsed, md files = {:?}", paths);
         if !paths.is_empty() {
             let state = app.state::<CliPaths>();
             *state.0.lock().unwrap() = paths;
@@ -105,6 +106,14 @@ mod commands {
         let label = format!("window-{}", window_count);
         let title = commands::window_title(display);
         let (x, y) = cascade_position(window_count);
+        log::info!(
+            "create_window_for_file: label={}, file={}, title={}, position=({},{})",
+            label,
+            file_path,
+            title,
+            x,
+            y
+        );
         // Pass file path as URL query parameter (URL-encoded) — available immediately on page load.
         let url = format!("index.html?file={}", urlencoding::encode(file_path));
         let _window = WebviewWindowBuilder::new(app, &label, WebviewUrl::App(url.into()))
@@ -113,6 +122,10 @@ mod commands {
             .position(x, y)
             .build()
             .map_err(|e| format!("Failed to create window: {}", e))?;
+        log::info!(
+            "create_window_for_file: window created successfully for {}",
+            file_path
+        );
         Ok(())
     }
 
@@ -128,6 +141,7 @@ mod commands {
         file_path: &str,
     ) {
         let display = file_path.split('/').next_back().unwrap_or(file_path);
+        log::info!("open_or_create_window called for file: {}", file_path);
 
         let main = app.get_webview_window("main");
         let cli_paths = app.state::<CliPaths>();
@@ -143,6 +157,10 @@ mod commands {
         };
 
         if should_fill_main {
+            log::info!(
+                "open_or_create_window: filling main window with {}",
+                file_path
+            );
             if let Some(main) = main {
                 let _ = main.set_title(&window_title(display));
                 let js = format!(
@@ -156,10 +174,18 @@ mod commands {
 
         // Main doesn't exist yet → CliPaths now holds this path; setup() will use it.
         if main.is_none() {
+            log::info!(
+                "open_or_create_window: main window not exists yet, queued file {}",
+                file_path
+            );
             return;
         }
 
         // Main exists and already has a file → new window.
+        log::info!(
+            "open_or_create_window: creating new window for {}",
+            file_path
+        );
         let _ = create_window_for_file(app, file_path, display);
     }
 
@@ -326,17 +352,32 @@ fn open_file_plugin<R: tauri::Runtime>() -> tauri::plugin::TauriPlugin<R> {
     tauri::plugin::Builder::new("mdviewer-open-file")
         .on_event(|app, event| {
             if let RunEvent::Opened { urls } = event {
+                log::info!(
+                    "open_file_plugin: RunEvent::Opened with {} urls",
+                    urls.len()
+                );
                 for url in urls {
                     if let Ok(path) = url.to_file_path() {
                         let path_str = path.to_string_lossy().into_owned();
                         if commands::is_md_file(&path_str) {
+                            log::info!(
+                                "open_file_plugin: opening md file via Finder event: {}",
+                                path_str
+                            );
                             let app = app.app_handle().clone();
                             tauri::async_runtime::spawn(async move {
                                 let _ = app.clone().run_on_main_thread(move || {
                                     commands::open_or_create_window(&app, &path_str);
                                 });
                             });
+                        } else {
+                            log::info!("open_file_plugin: ignored non-md file: {}", path_str);
                         }
+                    } else {
+                        log::warn!(
+                            "open_file_plugin: failed to convert url to file path: {:?}",
+                            url
+                        );
                     }
                 }
             }
@@ -369,11 +410,15 @@ pub fn run() {
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
     {
         builder = builder.plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
+            log::info!("single_instance: new invocation with args {:?}", args);
             let app = app.clone();
             let _ = app.clone().run_on_main_thread(move || {
                 for arg in args.iter().skip(1) {
                     if !arg.starts_with('-') && commands::is_md_file(arg) {
+                        log::info!("single_instance: opening file from args: {}", arg);
                         commands::open_or_create_window(&app, arg);
+                    } else {
+                        log::debug!("single_instance: skipping arg: {}", arg);
                     }
                 }
             });
@@ -381,33 +426,41 @@ pub fn run() {
     }
 
     builder
+        .plugin(tauri_plugin_log::Builder::new().build())
         .plugin(tauri_plugin_dialog::init())
         .plugin(open_file_plugin())
         .setup(|app| {
+            log::info!("setup: initializing app");
             commands::init_cli_paths(app)?;
 
             let paths = app.state::<commands::CliPaths>();
             let file_paths = paths.0.lock().unwrap().clone();
+            log::info!("setup: CLI file paths = {:?}", file_paths);
             if let Some(first_path) = file_paths.first() {
                 let display = first_path.split('/').next_back().unwrap_or(first_path);
                 let title = commands::window_title(display);
                 if let Some(main_window) = app.get_webview_window("main") {
                     main_window.set_title(&title).ok();
+                    log::info!("setup: set main window title to {}", title);
                 }
             }
             for path_str in file_paths.iter().skip(1) {
                 let display = path_str.split('/').next_back().unwrap_or(path_str);
+                log::info!("setup: creating window for CLI arg {}", path_str);
                 let _ = commands::create_window_for_file(app.app_handle(), path_str, display);
             }
             Ok(())
         })
         .on_page_load(|webview, _payload| {
+            log::info!("on_page_load: window label = {}", webview.window().label());
             // When the main window loads, check if it has a CLI file to open.
             if webview.window().label() == "main" {
                 let app_handle = webview.app_handle().clone();
                 let paths = app_handle.state::<commands::CliPaths>();
                 let file_paths = paths.0.lock().unwrap().clone();
+                log::info!("on_page_load: main window loading, CLI paths = {:?}", file_paths);
                 if let Some(first_path) = file_paths.first() {
+                    log::info!("on_page_load: loading first CLI file into main window: {}", first_path);
                     let js = format!(
                         "(function() {{ if (typeof loadFile === 'function') {{ loadFile({}); }} }})();",
                         serde_json::to_string(first_path).unwrap_or_default()
