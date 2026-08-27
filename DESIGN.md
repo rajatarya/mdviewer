@@ -152,6 +152,21 @@ The `bin/update.sh` script:
 **For others:**
 They need a GitHub account to access releases. Run `make update` with `GITHUB_TOKEN` set if rate-limited.
 
+## Logging
+
+Logging is enabled via `tauri-plugin-log` with the `log` crate. Logs are written to the Tauri application logs directory (platform-specific) and to stdout/stderr during development.
+
+Key events logged:
+- App startup (`setup`)
+- CLI arguments parsed (`init_cli_paths`)
+- Single-instance invocations (`single_instance` callback)
+- macOS/iOS document open events (`open_file_plugin`)
+- Window creation decisions (`open_or_create_window`, `create_window_for_file`)
+- Main window fill vs new window creation
+- Page load events (`on_page_load`)
+
+Use `log::info!`, `log::warn!`, `log::debug!` throughout the codebase. No additional dependency weight beyond existing `log` crate and `tauri-plugin-log` (already in Cargo.toml).
+
 ## Test Coverage
 - ✅ Header rendering
 - ✅ Mermaid fence rendering
