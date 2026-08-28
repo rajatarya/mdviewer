@@ -41,6 +41,7 @@ notify = "8.0.0"
 regex = "1.10.6"
 serde_yaml = "0.9"
 urlencoding = "2"
+html-escape = "0.2"
 
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 tauri-plugin-single-instance = "2.4.1"

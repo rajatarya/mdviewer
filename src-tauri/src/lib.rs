@@ -1,8 +1,9 @@
-// Markdown rendering core
+ // Markdown rendering core
 
 use pulldown_cmark::{html::push_html, Options, Parser};
 use tauri::{command, AppHandle, Manager, RunEvent, WebviewUrl, WebviewWindowBuilder};
 
+mod print;
 mod commands {
     use super::*;
     use std::collections::hash_map::DefaultHasher;
