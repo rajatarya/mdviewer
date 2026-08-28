@@ -229,14 +229,15 @@ mod commands {
     }
 
     #[command]
-    pub fn open_file_new_window(app_handle: tauri::AppHandle) -> Result<(), String> {
+    pub async fn open_file_new_window(app_handle: tauri::AppHandle) -> Result<(), String> {
         use tauri_plugin_dialog::DialogExt;
-        // Open file dialog
+        // Open file dialog asynchronously
         let file_path = app_handle
             .dialog()
             .file()
             .add_filter("Markdown", &["md", "markdown", "txt"])
-            .blocking_pick_file();
+            .pick_file()
+            .await;
         if let Some(path) = file_path {
             if let Some(path_str) = path.as_path() {
                 let path_str = path_str.to_string_lossy().to_string();
@@ -573,8 +574,11 @@ pub fn run() {
                             match id {
                                 "print" => { let _ = window.print(); }
                                 "file_open" => {
-                                    // Open file dialog and create new window
-                                    let _ = commands::open_file_new_window(app_handle.clone());
+                                    // Open file dialog and create new window asynchronously
+                                    let handle = app_handle.clone();
+                                    tauri::async_runtime::spawn(async move {
+                                        let _ = commands::open_file_new_window(handle).await;
+                                    });
                                 }
                                 "file_export" => {
                                     let _ = window.eval("document.getElementById('export-btn')?.click()");
