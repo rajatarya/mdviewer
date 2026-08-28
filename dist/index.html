@@ -563,6 +563,81 @@
   }
 
   /* Toolbar — hide/show based on whether a file is loaded */
+
+  /* Print styles */
+  @media print {
+    :root {
+      --bg: #ffffff;
+      --text: #000000;
+      --border: #cccccc;
+      --link: #000000;
+      --code-bg: #f5f5f5;
+      --blockquote: #f5f5f5;
+    }
+    body {
+      background: white !important;
+      color: black !important;
+      transform: none !important;
+      margin: 0 !important;
+      padding: 0 !important;
+    }
+    .toolbar {
+      display: none !important;
+    }
+    .container {
+      margin: 0 !important;
+      padding: 0 !important;
+      transform: none !important;
+    }
+    .markdown-body {
+      font-size: 10pt;
+      line-height: 1.25;
+    }
+    /* Scale down headings proportionally for print */
+    h1 { font-size: 16pt !important; }
+    h2 { font-size: 13pt !important; }
+    h3 { font-size: 11pt !important; }
+    /* Scale images and code blocks slightly */
+    img, svg {
+      max-width: 100% !important;
+      page-break-inside: avoid;
+      height: auto !important;
+    }
+    a {
+      color: black !important;
+      text-decoration: underline;
+    }
+    img, svg {
+      max-width: 100% !important;
+      page-break-inside: avoid;
+    }
+    pre, code, blockquote, .callout, table {
+      page-break-inside: avoid;
+    }
+    h1, h2, h3 {
+      page-break-after: avoid;
+    }
+    /* Footer with filename and page number */
+    @page {
+      margin: 0.5in;
+      @bottom-center {
+        content: attr(data-filename) "  Page " counter(page) " / " counter(pages);
+        font-size: 9pt;
+        color: #333;
+      }
+    }
+    /* Fallback for browsers that don't support @page margin boxes */
+    body::after {
+      content: attr(data-filename) "  Page " counter(page) " / " counter(pages);
+      position: fixed;
+      bottom: 0.5in;
+      left: 0;
+      right: 0;
+      text-align: center;
+      font-size: 9pt;
+      color: #333;
+    }
+  }
 </style>
 </head>
 <body>
@@ -572,6 +647,7 @@
   <span class="filename" id="filename" style="display:none"></span>
   <span class="title" id="app-title">Markdown Viewer</span>
   <button id="export-btn" title="Export as HTML" style="display:none">💾 Export</button>
+  <button id="print-btn" title="Print" style="display:none">🖨️ Print</button>
   <button id="theme-btn" title="Toggle theme">🌙</button>
   <div class="zoom-group">
     <button id="zoom-out-btn" title="Zoom out">−</button>
@@ -600,6 +676,7 @@
   const preview = document.getElementById('preview');
   const filenameEl = document.getElementById('filename');
   const exportBtn = document.getElementById('export-btn');
+  const printBtn = document.getElementById('print-btn');
   const themeBtn = document.getElementById('theme-btn');
   const openBtn = document.getElementById('open-btn');
   const fileInput = document.getElementById('file-input');
@@ -672,8 +749,26 @@
     applyZoom();
   });
 
-  // Keyboard shortcuts: Cmd/Ctrl + +/- for zoom
+  // Keyboard shortcuts: Cmd/Ctrl + +/- for zoom, Cmd/Ctrl+P for print
   document.addEventListener('keydown', (e) => {
+    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'p') {
+      e.preventDefault();
+      if (printBtn && printBtn.style.display !== 'none') {
+        document.body.dataset.filename = filenameEl.textContent || '';
+        if (filenameEl.textContent) {
+          const baseName = filenameEl.textContent.replace(/\.[^.]+$/, '');
+          document.title = `${baseName}.pdf`;
+        }
+        try {
+          const currentWindow = window.__TAURI__?.window?.getCurrent?.();
+          const label = currentWindow?.label ?? 'main';
+          window.__TAURI__.core.invoke('print_window', { label });
+        } catch {
+          window.print();
+        }
+      }
+      return;
+    }
     if ((e.metaKey || e.ctrlKey) && e.key === '=') {
       e.preventDefault();
       zoomLevel += ZOOM_STEP;
@@ -738,6 +833,7 @@
       filenameEl.style.display = 'inline';
       document.getElementById('app-title').style.display = 'none';
       exportBtn.style.display = 'inline';
+      document.getElementById('print-btn').style.display = 'inline';
 
       // Start file watching for live updates (Task 14)
       startWatching(filePath, content);
@@ -778,6 +874,28 @@
     } catch (err) {
       console.error('Export failed:', err);
       preview.innerHTML = `<p style="color:red">Export failed: ${err}</p>`;
+    }
+  });
+
+  /** Task 16: Print current markdown file. */
+  printBtn.addEventListener('click', async () => {
+    console.log('[mdviewer] Print button clicked', {filename: filenameEl.textContent, visible: printBtn.style.display});
+    // Ensure filename is set for print CSS
+    if (filenameEl.textContent) {
+      document.body.dataset.filename = filenameEl.textContent;
+      const baseName = filenameEl.textContent.replace(/\.[^.]+$/, '');
+      document.title = `${baseName}.pdf`;
+    }
+    // Use Tauri command to trigger print reliably, mirroring Export pattern
+    try {
+      // Get current window label via Tauri API
+      const currentWindow = window.__TAURI__?.window?.getCurrent?.();
+      const label = currentWindow?.label ?? 'main';
+      await window.__TAURI__.core.invoke('print_window', { label });
+    } catch (e) {
+      console.error('Print invoke failed', e);
+      // Fallback to direct print
+      window.print();
     }
   });
 

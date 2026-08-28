@@ -81,6 +81,105 @@ mod commands {
         format!("{} : Markdown Viewer", filename)
     }
 
+    pub(super) fn build_menus_from_app<R: tauri::Runtime>(
+        app: &tauri::AppHandle<R>,
+    ) -> Result<tauri::menu::Menu<R>, Box<dyn std::error::Error>> {
+        // App menu
+        let about_item = tauri::menu::MenuItemBuilder::new("About Markdown Viewer")
+            .id("app_about")
+            .build(app)?;
+        let quit_item = tauri::menu::MenuItemBuilder::new("Quit")
+            .id("app_quit")
+            .accelerator("CmdOrCtrl+Q")
+            .build(app)?;
+        let app_menu = tauri::menu::SubmenuBuilder::new(app, "Markdown Viewer")
+            .item(&about_item)
+            .separator()
+            .item(&quit_item)
+            .build()?;
+
+        // File menu
+        let open_item = tauri::menu::MenuItemBuilder::new("Open…")
+            .id("file_open")
+            .accelerator("CmdOrCtrl+O")
+            .build(app)?;
+        let export_item = tauri::menu::MenuItemBuilder::new("Export…")
+            .id("file_export")
+            .build(app)?;
+        let print_item = tauri::menu::MenuItemBuilder::new("Print…")
+            .id("print")
+            .accelerator("CmdOrCtrl+P")
+            .build(app)?;
+        let close_item = tauri::menu::MenuItemBuilder::new("Close")
+            .id("file_close")
+            .accelerator("CmdOrCtrl+W")
+            .build(app)?;
+        let exit_item = tauri::menu::MenuItemBuilder::new("Exit")
+            .id("file_exit")
+            .accelerator("CmdOrCtrl+Q")
+            .build(app)?;
+
+        let file_menu = tauri::menu::SubmenuBuilder::new(app, "File")
+            .item(&open_item)
+            .item(&export_item)
+            .separator()
+            .item(&print_item)
+            .separator()
+            .item(&close_item)
+            .item(&exit_item)
+            .build()?;
+
+        // View menu
+        let zoom_in_item = tauri::menu::MenuItemBuilder::new("Zoom In")
+            .id("view_zoom_in")
+            .accelerator("CmdOrCtrl+=")
+            .build(app)?;
+        let zoom_out_item = tauri::menu::MenuItemBuilder::new("Zoom Out")
+            .id("view_zoom_out")
+            .accelerator("CmdOrCtrl+-")
+            .build(app)?;
+        let zoom_reset_item = tauri::menu::MenuItemBuilder::new("Actual Size")
+            .id("view_zoom_reset")
+            .accelerator("CmdOrCtrl+0")
+            .build(app)?;
+        let theme_item = tauri::menu::MenuItemBuilder::new("Toggle Theme")
+            .id("view_toggle_theme")
+            .build(app)?;
+
+        let view_menu = tauri::menu::SubmenuBuilder::new(app, "View")
+            .item(&zoom_in_item)
+            .item(&zoom_out_item)
+            .item(&zoom_reset_item)
+            .separator()
+            .item(&theme_item)
+            .build()?;
+
+        // Window menu
+        let mut window_submenu_builder = tauri::menu::SubmenuBuilder::new(app, "Window");
+        let bring_front_item = tauri::menu::MenuItemBuilder::new("Bring All to Front")
+            .id("window_bring_front")
+            .build(app)?;
+        window_submenu_builder = window_submenu_builder.item(&bring_front_item);
+        window_submenu_builder = window_submenu_builder.separator();
+        for (label, window) in app.webview_windows().iter() {
+            let title = window.title().unwrap_or_else(|_| label.clone());
+            let item_id = format!("window_{}", label);
+            let item = tauri::menu::MenuItemBuilder::new(title)
+                .id(&item_id)
+                .build(app)?;
+            window_submenu_builder = window_submenu_builder.item(&item);
+        }
+        let window_menu = window_submenu_builder.build()?;
+
+        let menu = tauri::menu::MenuBuilder::new(app)
+            .item(&app_menu)
+            .item(&file_menu)
+            .item(&view_menu)
+            .item(&window_menu)
+            .build()?;
+        Ok(menu)
+    }
+
     /// Cascade offset for the Nth secondary window so each new window lands
     /// at a distinct, visible position rather than stacking on top of the
     /// previous one. Tauri / AppKit do not consistently auto-cascade when
@@ -103,7 +202,12 @@ mod commands {
         display: &str,
     ) -> Result<(), String> {
         let window_count = app.webview_windows().len();
-        let label = format!("window-{}", window_count);
+        // Use sanitized filename as label for easier identification
+        let sanitized = display
+            .chars()
+            .map(|c| if c.is_alphanumeric() { c } else { '_' })
+            .collect::<String>();
+        let label = format!("window-{}-{}", window_count, sanitized);
         let title = commands::window_title(display);
         let (x, y) = cascade_position(window_count);
         log::info!(
@@ -126,6 +230,10 @@ mod commands {
             "create_window_for_file: window created successfully for {}",
             file_path
         );
+        // Rebuild menu to include new window in Window menu
+        if let Ok(menu) = build_menus_from_app(app) {
+            let _ = app.set_menu(menu);
+        }
         Ok(())
     }
 
@@ -221,6 +329,53 @@ mod commands {
     /// Watch a file for changes. Spawns a background thread that emits
     /// "mdviewer:file-changed" Tauri events with updated content when the file is modified.
     /// Returns the initial file content.
+    #[command]
+    pub fn print_window(app_handle: tauri::AppHandle, label: String) {
+        if let Some(window) = app_handle.get_webview_window(&label) {
+            let _ = window.print();
+        }
+    }
+
+    #[command]
+    pub fn get_about_info(_app_handle: tauri::AppHandle) -> Result<(String, String), String> {
+        let version = env!("CARGO_PKG_VERSION").to_string();
+        // Try to get git sha from environment or git command
+        let git_sha = std::process::Command::new("git")
+            .args(&["rev-parse", "HEAD"])
+            .output()
+            .ok()
+            .and_then(|out| if out.status.success() {
+                String::from_utf8(out.stdout).ok()
+            } else { None })
+            .unwrap_or_else(|| "unknown".to_string())
+            .trim()
+            .to_string();
+        Ok((version, git_sha))
+    }
+
+    #[command]
+    pub fn open_file_new_window(app_handle: tauri::AppHandle) -> Result<(), String> {
+        use tauri_plugin_dialog::DialogExt;
+        // Open file dialog blocking but runs in spawn thread
+        let file_path = app_handle
+            .dialog()
+            .file()
+            .add_filter("Markdown", &["md", "markdown", "txt"])
+            .blocking_pick_file();
+        if let Some(path) = file_path {
+            if let Some(path_str) = path.as_path() {
+                let path_str = path_str.to_string_lossy().to_string();
+                if is_md_file(&path_str) {
+                    let display = path_str.split('/').next_back().unwrap_or(&path_str);
+                    // Create new window for file
+                    let _ = commands::create_window_for_file(&app_handle, &path_str, display);
+                    return Ok(());
+                }
+            }
+        }
+        Ok(())
+    }
+
     #[command]
     pub fn watch_file(path: &str, app_handle: tauri::AppHandle) -> Result<String, String> {
         use std::path::PathBuf;
@@ -393,10 +548,6 @@ fn open_file_plugin<R: tauri::Runtime>() -> tauri::plugin::TauriPlugin<R> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    use commands::{
-        create_window, export_html, extract_fm, get_cli_paths, get_window_file, read_file,
-        render_md, render_md_for_file, set_window_title, watch_file,
-    };
     let paths = commands::CliPaths(std::sync::Mutex::new(Vec::new()));
     let window_files =
         commands::WindowFiles(std::sync::Mutex::new(std::collections::HashMap::new()));
@@ -431,6 +582,100 @@ pub fn run() {
         .plugin(open_file_plugin())
         .setup(|app| {
             log::info!("setup: initializing app");
+
+            let menu = commands::build_menus_from_app(app.handle())?;
+            app.set_menu(menu)?;
+
+            // Handle menu events
+            let app_handle = app.handle().clone();
+            app.on_menu_event(move |_, event| {
+                let id = event.id().as_ref();
+                match id {
+                    "app_about" => {
+                        // Show about info with version and git sha, open project homepage
+                        if let Some(window) = app_handle.get_webview_window("main") {
+                            let _ = window.eval(r#"
+                                window.__TAURI__.core.invoke('get_about_info').then(([version, gitSha]) => {
+                                    const html = `<div style="font-family: system-ui; padding: 20px; max-width: 400px;"><h2>Markdown Viewer</h2><p><strong>Version:</strong> ${version}</p><p><strong>Git SHA:</strong> ${gitSha.substring(0, 12)}</p><p><strong>Project Homepage:</strong> <a href="https://github.com/rajatarya/mdviewer" target="_blank">https://github.com/rajatarya/mdviewer</a></p></div>`;
+                                    const modal = document.createElement('div');
+                                    modal.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;z-index:10000';
+                                    const box = document.createElement('div');
+                                    box.style.cssText = 'background:white;color:black;padding:20px;border-radius:8px;max-width:500px';
+                                    box.innerHTML = html + '<button onclick="this.closest(\'div\').remove()" style="margin-top:10px">Close</button>';
+                                    modal.appendChild(box);
+                                    document.body.appendChild(modal);
+                                }).catch(e => {
+                                    alert('Markdown Viewer\\nVersion unknown\\n\\nProject Homepage: https://github.com/rajatarya/mdviewer');
+                                    window.open('https://github.com/rajatarya/mdviewer', '_blank');
+                                });
+                            "#);
+                        }
+                    }
+                    "app_quit" => {
+                        app_handle.exit(0);
+                    }
+                    _ => {
+                        if let Some(window) = app_handle.get_webview_window("main") {
+                            match id {
+                                "print" => {
+                                    let _ = window.eval(r#"
+                                        const filenameEl = document.getElementById('filename');
+                                        if (filenameEl && filenameEl.textContent) {
+                                            const baseName = filenameEl.textContent.replace(/\.[^.]+$/, '');
+                                            document.title = `${baseName}.pdf`;
+                                            document.body.dataset.filename = filenameEl.textContent;
+                                        }
+                                        window.print();
+                                    "#);
+                                }
+                                "file_open" => {
+                                    // Open file dialog and create new window in a thread
+                                    let handle = app_handle.clone();
+                                    std::thread::spawn(move || {
+                                        let _ = commands::open_file_new_window(handle);
+                                    });
+                                }
+                                "file_export" => {
+                                    let _ = window.eval("document.getElementById('export-btn')?.click()");
+                                }
+                                "file_close" => {
+                                    let _ = window.close();
+                                }
+                                "file_exit" => {
+                                    app_handle.exit(0);
+                                }
+                                "view_zoom_in" => {
+                                    let _ = window.eval("document.getElementById('zoom-in-btn')?.click()");
+                                }
+                                "view_zoom_out" => {
+                                    let _ = window.eval("document.getElementById('zoom-out-btn')?.click()");
+                                }
+                                "view_zoom_reset" => {
+                                    let _ = window.eval("document.getElementById('zoom-reset-btn')?.click()");
+                                }
+                                "view_toggle_theme" => {
+                                    let _ = window.eval("document.getElementById('theme-btn')?.click()");
+                                }
+                                "window_bring_front" => {
+                                    // Bring all windows to front
+                                    for win in app_handle.webview_windows().values() {
+                                        let _ = win.set_focus();
+                                    }
+                                }
+                                _ => {
+                                    // Handle per-window bring to front: id format window_<label>
+                                    if let Some(stripped) = id.strip_prefix("window_") {
+                                        if let Some(win) = app_handle.get_webview_window(stripped) {
+                                            let _ = win.set_focus();
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+
             commands::init_cli_paths(app)?;
 
             let paths = app.state::<commands::CliPaths>();
@@ -470,16 +715,19 @@ pub fn run() {
             }
         })
         .invoke_handler(tauri::generate_handler![
-            render_md,
-            render_md_for_file,
-            extract_fm,
-            read_file,
-            watch_file,
-            export_html,
-            get_cli_paths,
-            get_window_file,
-            create_window,
-            set_window_title,
+            commands::render_md,
+            commands::render_md_for_file,
+            commands::extract_fm,
+            commands::read_file,
+            commands::watch_file,
+            commands::export_html,
+            commands::get_cli_paths,
+            commands::get_window_file,
+            commands::create_window,
+            commands::set_window_title,
+            commands::print_window,
+            commands::open_file_new_window,
+            commands::get_about_info,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -1291,6 +1539,9 @@ mod tests {
             "get_cli_paths",
             "get_window_file",
             "set_window_title",
+            "print_window",
+            "open_file_new_window",
+            "create_window",
             // plugin-provided commands (format: "plugin:<namespace>|<command>")
             "plugin:dialog|save",
             "plugin:dialog|open",
