@@ -619,23 +619,30 @@
     }
     /* Footer with filename and page number */
     @page {
-      margin: 0.5in;
+      margin: 0.5in 0.5in 0.8in 0.5in;
       @bottom-center {
-        content: attr(data-filename) "  Page " counter(page) " / " counter(pages);
+        content: "Page " counter(page);
         font-size: 9pt;
         color: #333;
       }
     }
-    /* Fallback for browsers that don't support @page margin boxes */
-    body::after {
-      content: attr(data-filename) "  Page " counter(page) " / " counter(pages);
+    /* Fixed footer for print - robust DOM footer */
+    .print-footer {
       position: fixed;
       bottom: 0.5in;
-      left: 0;
-      right: 0;
+      left: 0.5in;
+      right: 0.5in;
       text-align: center;
       font-size: 9pt;
       color: #333;
+      border-top: 1px solid #ccc;
+      padding-top: 4pt;
+      display: none;
+    }
+    @media print {
+      .print-footer {
+        display: block;
+      }
     }
   }
 </style>
@@ -754,7 +761,9 @@
     if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'p') {
       e.preventDefault();
       if (printBtn && printBtn.style.display !== 'none') {
+        const printFilenameEl = document.getElementById('print-filename');
         document.body.dataset.filename = filenameEl.textContent || '';
+        if (printFilenameEl) printFilenameEl.textContent = filenameEl.textContent || '';
         if (filenameEl.textContent) {
           const baseName = filenameEl.textContent.replace(/\.[^.]+$/, '');
           document.title = `${baseName}.pdf`;
@@ -880,9 +889,11 @@
   /** Task 16: Print current markdown file. */
   printBtn.addEventListener('click', async () => {
     console.log('[mdviewer] Print button clicked', {filename: filenameEl.textContent, visible: printBtn.style.display});
-    // Ensure filename is set for print CSS
+    // Set filename in print footer
+    const printFilenameEl = document.getElementById('print-filename');
     if (filenameEl.textContent) {
       document.body.dataset.filename = filenameEl.textContent;
+      if (printFilenameEl) printFilenameEl.textContent = filenameEl.textContent;
       const baseName = filenameEl.textContent.replace(/\.[^.]+$/, '');
       document.title = `${baseName}.pdf`;
     }
@@ -1326,5 +1337,6 @@
 
   init();
 </script>
+<div class="print-footer"><span id="print-filename"></span></div>
 </body>
 </html>
