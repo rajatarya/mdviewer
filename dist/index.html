@@ -745,7 +745,7 @@
       e.preventDefault();
       if (printBtn && printBtn.style.display !== 'none') {
         document.body.dataset.filename = filenameEl.textContent || '';
-        setTimeout(() => window.print(), 100);
+        window.print();
       }
       return;
     }
@@ -863,8 +863,8 @@
     if (filenameEl.textContent) {
       document.body.dataset.filename = filenameEl.textContent;
     }
-    // Small delay to allow Mermaid diagrams to finish rendering before print
-    setTimeout(() => window.print(), 100);
+    // Print synchronously to keep user gesture; Mermaid is already rendered on load
+    window.print();
   });
 
   /** Listen for file-change events from the Rust backend. */
