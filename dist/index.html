@@ -763,20 +763,33 @@
     if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'p') {
       e.preventDefault();
       if (printBtn && printBtn.style.display !== 'none') {
-        const printFooterEl = document.getElementById('print-footer');
-        document.body.dataset.filename = filenameEl.textContent || '';
-        if (printFooterEl) printFooterEl.setAttribute('data-filename', filenameEl.textContent || '');
-        if (filenameEl.textContent) {
-          const baseName = filenameEl.textContent.replace(/\.[^.]+$/, '');
-          document.title = `${baseName}.pdf`;
-        }
-        try {
-          const currentWindow = window.__TAURI__?.window?.getCurrent?.();
-          const label = currentWindow?.label ?? 'main';
-          window.__TAURI__.core.invoke('print_window', { label });
-        } catch {
-          window.print();
-        }
+        // Use Rust backend to generate print-ready HTML
+        (async () => {
+          try {
+            const markdownHtml = document.getElementById('content')?.innerHTML || document.body.innerHTML;
+            const filename = filenameEl.textContent || 'document.md';
+            const printHtml = await window.__TAURI__.core.invoke('prepare_print_html', { markdownHtml, filename });
+            const printWindow = window.open('', '_blank');
+            if (printWindow) {
+              printWindow.document.write(printHtml);
+              printWindow.document.close();
+              await printWindow.onload;
+              printWindow.print();
+              printWindow.close();
+              return;
+            }
+          } catch (err) {
+            console.error('Prepare print HTML failed', err);
+          }
+          // Fallback
+          try {
+            const currentWindow = window.__TAURI__?.window?.getCurrent?.();
+            const label = currentWindow?.label ?? 'main';
+            window.__TAURI__.core.invoke('print_window', { label });
+          } catch {
+            window.print();
+          }
+        })();
       }
       return;
     }
@@ -891,23 +904,31 @@
   /** Task 16: Print current markdown file. */
   printBtn.addEventListener('click', async () => {
     console.log('[mdviewer] Print button clicked', {filename: filenameEl.textContent, visible: printBtn.style.display});
-    // Set filename in print footer
-    const printFooterEl = document.getElementById('print-footer');
-    if (filenameEl.textContent) {
-      document.body.dataset.filename = filenameEl.textContent;
-      if (printFooterEl) printFooterEl.setAttribute('data-filename', filenameEl.textContent);
-      const baseName = filenameEl.textContent.replace(/\.[^.]+$/, '');
-      document.title = `${baseName}.pdf`;
-    }
-    // Use Tauri command to trigger print reliably, mirroring Export pattern
+    // Use Rust backend to generate print-ready HTML with footer
     try {
-      // Get current window label via Tauri API
+      const markdownHtml = document.getElementById('content')?.innerHTML || document.body.innerHTML;
+      const filename = filenameEl.textContent || 'document.md';
+      const printHtml = await window.__TAURI__.core.invoke('prepare_print_html', { markdownHtml, filename });
+      // Create a new window for printing with the generated HTML
+      const printWindow = window.open('', '_blank');
+      if (printWindow) {
+        printWindow.document.write(printHtml);
+        printWindow.document.close();
+        await printWindow.onload;
+        printWindow.print();
+        printWindow.close();
+        return;
+      }
+    } catch (e) {
+      console.error('Prepare print HTML failed', e);
+    }
+    // Fallback to direct print
+    try {
       const currentWindow = window.__TAURI__?.window?.getCurrent?.();
       const label = currentWindow?.label ?? 'main';
       await window.__TAURI__.core.invoke('print_window', { label });
     } catch (e) {
       console.error('Print invoke failed', e);
-      // Fallback to direct print
       window.print();
     }
   });
