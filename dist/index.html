@@ -917,7 +917,12 @@
       }
       const pdfPath = await invoke('export_pdf', { markdown, filename });
       // Open PDF with default app
-      await window.__TAURI__.shell.open(pdfPath);
+      try {
+        await window.__TAURI__.shell.open(pdfPath);
+      } catch (openErr) {
+        console.warn('shell.open failed, showing path', openErr);
+        alert('PDF exported to: ' + pdfPath);
+      }
       return;
     } catch (e) {
       console.error('Export PDF failed', e);
