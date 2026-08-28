@@ -564,6 +564,20 @@
 
   /* Toolbar — hide/show based on whether a file is loaded */
 
+  /* Print footer - hidden on screen, shown in print */
+  .print-footer {
+    position: fixed;
+    bottom: 0.5in;
+    left: 0.5in;
+    right: 0.5in;
+    text-align: center;
+    font-size: 9pt;
+    color: #333;
+    border-top: 1px solid #ccc;
+    padding-top: 4pt;
+    display: none;
+  }
+
   /* Print styles */
   @media print {
     :root {
@@ -626,24 +640,10 @@
         color: #333;
       }
     }
-    /* Fixed footer for print - robust DOM footer */
     .print-footer {
-      position: fixed;
-      bottom: 0.5in;
-      left: 0.5in;
-      right: 0.5in;
-      text-align: center;
-      font-size: 9pt;
-      color: #333;
-      border-top: 1px solid #ccc;
-      padding-top: 4pt;
-      display: none;
+      display: block;
     }
-    @media print {
-      .print-footer {
-        display: block;
-      }
-    }
+    /* Print footer will be shown via @media print below */
   }
 </style>
 </head>
