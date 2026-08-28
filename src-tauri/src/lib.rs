@@ -222,6 +222,13 @@ mod commands {
     /// "mdviewer:file-changed" Tauri events with updated content when the file is modified.
     /// Returns the initial file content.
     #[command]
+    pub fn print_window(app_handle: tauri::AppHandle, label: String) {
+        if let Some(window) = app_handle.get_webview_window(&label) {
+            let _ = window.print();
+        }
+    }
+
+    #[command]
     pub fn watch_file(path: &str, app_handle: tauri::AppHandle) -> Result<String, String> {
         use std::path::PathBuf;
 
@@ -583,6 +590,7 @@ pub fn run() {
             get_window_file,
             create_window,
             set_window_title,
+            print_window,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

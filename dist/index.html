@@ -745,7 +745,12 @@
       e.preventDefault();
       if (printBtn && printBtn.style.display !== 'none') {
         document.body.dataset.filename = filenameEl.textContent || '';
-        window.print();
+        try {
+          const win = window.__TAURI__.window.getCurrent();
+          window.__TAURI__.core.invoke('print_window', { label: win.label });
+        } catch {
+          window.print();
+        }
       }
       return;
     }
@@ -858,14 +863,20 @@
   });
 
   /** Task 16: Print current markdown file. */
-  printBtn.addEventListener('click', () => {
+  printBtn.addEventListener('click', async () => {
     console.log('[mdviewer] Print button clicked', {filename: filenameEl.textContent, visible: printBtn.style.display});
     // Ensure filename is set for print CSS
     if (filenameEl.textContent) {
       document.body.dataset.filename = filenameEl.textContent;
     }
-    // Print synchronously to keep user gesture; Mermaid is already rendered on load
-    window.print();
+    // Use Tauri print command to ensure user gesture works reliably
+    try {
+      const win = window.__TAURI__.window.getCurrent();
+      await window.__TAURI__.core.invoke('print_window', { label: win.label });
+    } catch (e) {
+      console.error('Print invoke failed', e);
+      window.print();
+    }
   });
 
   /** Listen for file-change events from the Rust backend. */
