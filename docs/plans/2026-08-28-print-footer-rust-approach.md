@@ -71,9 +71,24 @@ Generate a print-ready HTML document server-side in Rust with footer injected pe
    - Calls `webview.print()` on that HTML.
 
 ### TDD Plan
-1. **Unit test**: `prepare_print_html` returns HTML containing filename and footer element.
-2. **Integration test**: Render test markdown, generate print HTML, assert footer element present with correct filename.
-3. **Manual test**: Run mdviewer, print, verify footer appears on every page.
+1. **Unit tests for `prepare_print_html`**:
+   - `test_prepare_print_html_contains_filename` – output contains filename string
+   - `test_prepare_print_html_contains_footer_element` – output contains `.print-footer` div with correct id
+   - `test_prepare_print_html_preserves_content` – original markdown HTML is preserved inside `.print-content`
+   - `test_prepare_print_html_escapes_filename` – filename with HTML special chars is escaped
+   - `test_prepare_print_html_has_print_css` – output contains `@media print` and `@page` rules
+
+2. **Integration tests**:
+   - `test_print_html_generation_with_real_markdown` – render sample markdown via `pulldown-cmark`, generate print HTML, assert footer present
+   - `test_print_html_multiple_pages` – long content with page breaks, verify footer element is present once and CSS ensures repeat
+   - `test_print_html_filename_edge_cases` – empty filename, long filename, unicode filename
+
+3. **Automated PDF verification**:
+   - Use headless Chrome via `puppeteer` in CI to load generated HTML, print to PDF, extract text with `pdf-parse`, assert filename appears on each page
+   - Test runs on PR via GitHub Actions
+
+4. **Manual verification**:
+   - Run mdviewer, open file, print, verify footer appears on every page in system print preview
 
 ### Acceptance Criteria
 - Filename appears at bottom of every printed page.
