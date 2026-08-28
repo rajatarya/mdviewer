@@ -904,23 +904,16 @@
   /** Task 16: Print current markdown file. */
   printBtn.addEventListener('click', async () => {
     console.log('[mdviewer] Print button clicked', {filename: filenameEl.textContent, visible: printBtn.style.display});
-    // Use Rust backend to generate print-ready HTML with footer
+    // Use Rust backend to export PDF with filename header/footer
     try {
-      const markdownHtml = document.getElementById('content')?.innerHTML || document.body.innerHTML;
+      const markdown = await window.__TAURI__.core.invoke('read_file', { path: currentFilePath });
       const filename = filenameEl.textContent || 'document.md';
-      const printHtml = await window.__TAURI__.core.invoke('prepare_print_html', { markdownHtml, filename });
-      // Create a new window for printing with the generated HTML
-      const printWindow = window.open('', '_blank');
-      if (printWindow) {
-        printWindow.document.write(printHtml);
-        printWindow.document.close();
-        await printWindow.onload;
-        printWindow.print();
-        printWindow.close();
-        return;
-      }
+      const pdfPath = await window.__TAURI__.core.invoke('export_pdf', { markdown, filename });
+      // Open PDF with default app
+      await window.__TAURI__.shell.open(pdfPath);
+      return;
     } catch (e) {
-      console.error('Prepare print HTML failed', e);
+      console.error('Export PDF failed', e);
     }
     // Fallback to direct print
     try {
