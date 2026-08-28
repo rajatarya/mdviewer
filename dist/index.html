@@ -916,9 +916,11 @@
         throw new Error('No markdown content available');
       }
       const pdfPath = await invoke('export_pdf', { markdown, filename });
+      console.log('[mdviewer] PDF exported to', pdfPath);
       // Open PDF with default app
       try {
         await window.__TAURI__.shell.open(pdfPath);
+        console.log('[mdviewer] shell.open succeeded');
       } catch (openErr) {
         console.error('shell.open failed', openErr);
       }

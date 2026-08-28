@@ -329,10 +329,12 @@ mod commands {
 
     #[command]
     pub fn export_pdf(markdown: &str, filename: &str) -> Result<String, String> {
+        log::info!("[export_pdf] Requested export for filename={}, markdown_len={}", filename, markdown.len());
         let tmp_dir = std::env::temp_dir();
         let safe_name = filename.replace('/', "_").replace('\\', "_");
         let output_path = tmp_dir.join(format!("mdviewer_{}.pdf", safe_name));
         pdf_export::export_markdown_to_pdf(markdown, filename, &output_path).map_err(|e| e.to_string())?;
+        log::info!("[export_pdf] Export succeeded, path={}", output_path.display());
         Ok(output_path.to_string_lossy().into_owned())
     }
 
