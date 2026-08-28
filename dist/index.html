@@ -577,6 +577,9 @@
     border-top: 1px solid #ccc;
     display: none;
   }
+  .print-footer::before {
+    content: attr(data-filename);
+  }
 
   /* Print styles */
   @media print {
@@ -760,9 +763,9 @@
     if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'p') {
       e.preventDefault();
       if (printBtn && printBtn.style.display !== 'none') {
-        const printFilenameEl = document.getElementById('print-filename');
+        const printFooterEl = document.getElementById('print-footer');
         document.body.dataset.filename = filenameEl.textContent || '';
-        if (printFilenameEl) printFilenameEl.textContent = filenameEl.textContent || '';
+        if (printFooterEl) printFooterEl.setAttribute('data-filename', filenameEl.textContent || '');
         if (filenameEl.textContent) {
           const baseName = filenameEl.textContent.replace(/\.[^.]+$/, '');
           document.title = `${baseName}.pdf`;
@@ -889,10 +892,10 @@
   printBtn.addEventListener('click', async () => {
     console.log('[mdviewer] Print button clicked', {filename: filenameEl.textContent, visible: printBtn.style.display});
     // Set filename in print footer
-    const printFilenameEl = document.getElementById('print-filename');
+    const printFooterEl = document.getElementById('print-footer');
     if (filenameEl.textContent) {
       document.body.dataset.filename = filenameEl.textContent;
-      if (printFilenameEl) printFilenameEl.textContent = filenameEl.textContent;
+      if (printFooterEl) printFooterEl.setAttribute('data-filename', filenameEl.textContent);
       const baseName = filenameEl.textContent.replace(/\.[^.]+$/, '');
       document.title = `${baseName}.pdf`;
     }
@@ -1336,6 +1339,6 @@
 
   init();
 </script>
-<div class="print-footer" id="print-footer"><span id="print-filename"></span></div>
+<div class="print-footer" id="print-footer"></div>
 </body>
 </html>
