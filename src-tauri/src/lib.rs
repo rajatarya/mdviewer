@@ -575,9 +575,16 @@ pub fn run() {
                 let id = event.id().as_ref();
                 match id {
                     "app_about" => {
-                        // Simple about dialog via window eval alert for now
+                        // Show about info and open project homepage
                         if let Some(window) = app_handle.get_webview_window("main") {
-                            let _ = window.eval("alert('Markdown Viewer\\nVersion 1.8.0\\n\\nGitHub: https://github.com/rajat-arya/mdviewer')");
+                            let _ = window.eval(r#"
+                                const info = `Markdown Viewer
+Version 1.8.0
+
+Project Homepage: https://github.com/rajat-arya/mdviewer`;
+                                alert(info);
+                                window.open('https://github.com/rajat-arya/mdviewer', '_blank');
+                            "#);
                         }
                     }
                     "app_quit" => {
