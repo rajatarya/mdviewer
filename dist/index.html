@@ -859,11 +859,13 @@
 
   /** Task 16: Print current markdown file. */
   printBtn.addEventListener('click', () => {
+    console.log('[mdviewer] Print button clicked', {filename: filenameEl.textContent, visible: printBtn.style.display});
     // Ensure filename is set for print CSS
     if (filenameEl.textContent) {
       document.body.dataset.filename = filenameEl.textContent;
     }
     // Print synchronously to keep user gesture; Mermaid is already rendered on load
+    alert('Print triggered');
     window.print();
   });
 

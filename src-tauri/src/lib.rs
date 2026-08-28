@@ -431,6 +431,30 @@ pub fn run() {
         .plugin(open_file_plugin())
         .setup(|app| {
             log::info!("setup: initializing app");
+            // Build File menu with Print item
+            let print_item = tauri::menu::MenuItemBuilder::new("Print")
+                .id("print")
+                .accelerator("CmdOrCtrl+P")
+                .build(app)?;
+            let file_menu_item = tauri::menu::SubmenuBuilder::new(app, "File")
+                .item(&print_item)
+                .build()?;
+            let menu = tauri::menu::MenuBuilder::new(app)
+                .item(&file_menu_item)
+                .build()?;
+            app.set_menu(menu)?;
+
+            // Handle menu print event
+            let app_handle = app.handle().clone();
+            app.on_menu_event(move |app_handle, event| {
+                if event.id().as_ref() == "print" {
+                    if let Some(window) = app_handle.get_webview_window("main") {
+                        // Trigger print via webview
+                        let _ = window.print();
+                    }
+                }
+            });
+
             commands::init_cli_paths(app)?;
 
             let paths = app.state::<commands::CliPaths>();
