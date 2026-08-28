@@ -581,9 +581,9 @@ pub fn run() {
                                 const info = `Markdown Viewer
 Version 1.8.0
 
-Project Homepage: https://github.com/rajat-arya/mdviewer`;
+Project Homepage: https://github.com/rajatarya/mdviewer`;
                                 alert(info);
-                                window.open('https://github.com/rajat-arya/mdviewer', '_blank');
+                                window.open('https://github.com/rajatarya/mdviewer', '_blank');
                             "#);
                         }
                     }
