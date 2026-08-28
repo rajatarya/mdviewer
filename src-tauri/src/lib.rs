@@ -222,7 +222,7 @@ mod commands {
     /// "mdviewer:file-changed" Tauri events with updated content when the file is modified.
     /// Returns the initial file content.
     #[command]
-    pub fn print_window(app_handle: tauri::AppHandle, label: String) {
+    pub fn print_window(app_handle: tauri::AppHandle, label: String) -> () {
         if let Some(window) = app_handle.get_webview_window(&label) {
             let _ = window.print();
         }
@@ -400,10 +400,6 @@ fn open_file_plugin<R: tauri::Runtime>() -> tauri::plugin::TauriPlugin<R> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    use commands::{
-        create_window, export_html, extract_fm, get_cli_paths, get_window_file, read_file,
-        render_md, render_md_for_file, set_window_title, watch_file,
-    };
     let paths = commands::CliPaths(std::sync::Mutex::new(Vec::new()));
     let window_files =
         commands::WindowFiles(std::sync::Mutex::new(std::collections::HashMap::new()));
@@ -507,7 +503,7 @@ pub fn run() {
 
             // Handle menu events
             let app_handle = app.handle().clone();
-            app.on_menu_event(move |app_handle, event| {
+            app.on_menu_event(move |_, event| {
                 let id = event.id().as_ref();
                 if let Some(window) = app_handle.get_webview_window("main") {
                     match id {
@@ -580,17 +576,17 @@ pub fn run() {
             }
         })
         .invoke_handler(tauri::generate_handler![
-            render_md,
-            render_md_for_file,
-            extract_fm,
-            read_file,
-            watch_file,
-            export_html,
-            get_cli_paths,
-            get_window_file,
-            create_window,
-            set_window_title,
-            print_window,
+            commands::render_md,
+            commands::render_md_for_file,
+            commands::extract_fm,
+            commands::read_file,
+            commands::watch_file,
+            commands::export_html,
+            commands::get_cli_paths,
+            commands::get_window_file,
+            commands::create_window,
+            commands::set_window_title,
+            commands::print_window,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
