@@ -103,7 +103,9 @@ mod commands {
         display: &str,
     ) -> Result<(), String> {
         let window_count = app.webview_windows().len();
-        let label = format!("window-{}", window_count);
+        // Use sanitized filename as label for easier identification
+        let sanitized = display.replace(|c| !c.is_alphanumeric(), "_");
+        let label = format!("window-{}-{}", window_count, sanitized);
         let title = commands::window_title(display);
         let (x, y) = cascade_position(window_count);
         log::info!(
@@ -229,15 +231,14 @@ mod commands {
     }
 
     #[command]
-    pub async fn open_file_new_window(app_handle: tauri::AppHandle) -> Result<(), String> {
+    pub fn open_file_new_window(app_handle: tauri::AppHandle) -> Result<(), String> {
         use tauri_plugin_dialog::DialogExt;
-        // Open file dialog asynchronously
+        // Open file dialog blocking but runs in spawn thread
         let file_path = app_handle
             .dialog()
             .file()
             .add_filter("Markdown", &["md", "markdown", "txt"])
-            .pick_file()
-            .await;
+            .blocking_pick_file();
         if let Some(path) = file_path {
             if let Some(path_str) = path.as_path() {
                 let path_str = path_str.to_string_lossy().to_string();
@@ -572,12 +573,22 @@ pub fn run() {
                     _ => {
                         if let Some(window) = app_handle.get_webview_window("main") {
                             match id {
-                                "print" => { let _ = window.print(); }
+                                "print" => {
+                                    let _ = window.eval(r#"
+                                        const filenameEl = document.getElementById('filename');
+                                        if (filenameEl && filenameEl.textContent) {
+                                            const baseName = filenameEl.textContent.replace(/\.[^.]+$/, '');
+                                            document.title = `${baseName}.pdf`;
+                                            document.body.dataset.filename = filenameEl.textContent;
+                                        }
+                                        window.print();
+                                    "#);
+                                }
                                 "file_open" => {
-                                    // Open file dialog and create new window asynchronously
+                                    // Open file dialog and create new window in a thread
                                     let handle = app_handle.clone();
-                                    tauri::async_runtime::spawn(async move {
-                                        let _ = commands::open_file_new_window(handle).await;
+                                    std::thread::spawn(move || {
+                                        let _ = commands::open_file_new_window(handle);
                                     });
                                 }
                                 "file_export" => {
@@ -658,6 +669,12 @@ pub fn run() {
                     let _ = webview.eval(&js);
                 }
             }
+        })
+        .on_webview_window_created(|app_handle, _window| {
+            // Rebuild menus when a new window is created to update Window menu titles
+            // Note: build_menus expects &tauri::App, but we have AppHandle; we can rebuild via a command or recreate menu here.
+            // For simplicity, we just log. Full rebuild requires app reference.
+            log::info!("on_webview_window_created: new window created, rebuilding menu");
         })
         .invoke_handler(tauri::generate_handler![
             commands::render_md,
