@@ -81,7 +81,9 @@ mod commands {
         format!("{} : Markdown Viewer", filename)
     }
 
-    fn build_menus_from_app<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> Result<tauri::menu::Menu<R>, Box<dyn std::error::Error>> {
+    pub(super) fn build_menus_from_app<R: tauri::Runtime>(
+        app: &tauri::AppHandle<R>,
+    ) -> Result<tauri::menu::Menu<R>, Box<dyn std::error::Error>> {
         // App menu
         let about_item = tauri::menu::MenuItemBuilder::new("About Markdown Viewer")
             .id("app_about")
@@ -201,7 +203,10 @@ mod commands {
     ) -> Result<(), String> {
         let window_count = app.webview_windows().len();
         // Use sanitized filename as label for easier identification
-        let sanitized = display.chars().map(|c| if c.is_alphanumeric() { c } else { '_' }).collect::<String>();
+        let sanitized = display
+            .chars()
+            .map(|c| if c.is_alphanumeric() { c } else { '_' })
+            .collect::<String>();
         let label = format!("window-{}-{}", window_count, sanitized);
         let title = commands::window_title(display);
         let (x, y) = cascade_position(window_count);
@@ -325,7 +330,7 @@ mod commands {
     /// "mdviewer:file-changed" Tauri events with updated content when the file is modified.
     /// Returns the initial file content.
     #[command]
-    pub fn print_window(app_handle: tauri::AppHandle, label: String) -> () {
+    pub fn print_window(app_handle: tauri::AppHandle, label: String) {
         if let Some(window) = app_handle.get_webview_window(&label) {
             let _ = window.print();
         }
@@ -561,7 +566,7 @@ pub fn run() {
         .setup(|app| {
             log::info!("setup: initializing app");
 
-            let menu = build_menus_from_app(&app.handle())?;
+            let menu = commands::build_menus_from_app(app.handle())?;
             app.set_menu(menu)?;
 
             // Handle menu events
@@ -1502,6 +1507,9 @@ mod tests {
             "get_cli_paths",
             "get_window_file",
             "set_window_title",
+            "print_window",
+            "open_file_new_window",
+            "create_window",
             // plugin-provided commands (format: "plugin:<namespace>|<command>")
             "plugin:dialog|save",
             "plugin:dialog|open",
