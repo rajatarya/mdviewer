@@ -44,8 +44,8 @@ jobs:
       - name: Find DMG assets
         id: dmg
         run: |
-          # The DMG is at src-tauri/target/release/bundle/dmg
-          DMG_PATH=$(find src-tauri/target/release/bundle/dmg -name "*.dmg" 2>/dev/null | head -1)
+          # The DMG is at target/release/bundle/dmg
+          DMG_PATH=$(find target/release/bundle/dmg -name "*.dmg" 2>/dev/null | head -1)
           echo "DMG_PATH=$DMG_PATH" >> "$GITHUB_OUTPUT"
           echo "Found: $DMG_PATH"
           [ -n "$DMG_PATH" ] || { echo "No .dmg found"; exit 1; }
