@@ -504,13 +504,24 @@ pub fn run() {
                 .item(&theme_item)
                 .build()?;
 
-            // Window menu
+            // Window menu with list of open windows
+            let mut window_submenu_builder = tauri::menu::SubmenuBuilder::new(app, "Window");
+            // Add Bring All to Front at top
             let bring_front_item = tauri::menu::MenuItemBuilder::new("Bring All to Front")
                 .id("window_bring_front")
                 .build(app)?;
-            let window_menu = tauri::menu::SubmenuBuilder::new(app, "Window")
-                .item(&bring_front_item)
-                .build()?;
+            window_submenu_builder = window_submenu_builder.item(&bring_front_item);
+            window_submenu_builder = window_submenu_builder.separator();
+            // List existing windows
+            for (label, window) in app.webview_windows().iter() {
+                let title = window.title().unwrap_or_else(|_| label.clone());
+                let item_id = format!("window_{}", label);
+                let item = tauri::menu::MenuItemBuilder::new(title)
+                    .id(&item_id)
+                    .build(app)?;
+                window_submenu_builder = window_submenu_builder.item(&item);
+            }
+            let window_menu = window_submenu_builder.build()?;
 
             let menu = tauri::menu::MenuBuilder::new(app)
                 .item(&app_menu)
@@ -568,7 +579,14 @@ pub fn run() {
                                         let _ = win.set_focus();
                                     }
                                 }
-                                _ => {}
+                                _ => {
+                                    // Handle per-window bring to front: id format window_<label>
+                                    if let Some(stripped) = id.strip_prefix("window_") {
+                                        if let Some(win) = app_handle.get_webview_window(stripped) {
+                                            let _ = win.set_focus();
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
