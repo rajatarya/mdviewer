@@ -4,6 +4,7 @@ use pulldown_cmark::{html::push_html, Options, Parser};
 use tauri::{command, AppHandle, Manager, RunEvent, WebviewUrl, WebviewWindowBuilder};
 
 mod print;
+mod pdf_export;
 mod commands {
     use super::*;
     use std::collections::hash_map::DefaultHasher;
@@ -324,6 +325,15 @@ mod commands {
     #[command]
     pub fn prepare_print_html(markdown_html: &str, filename: &str) -> String {
         print::prepare_print_html(markdown_html, filename)
+    }
+
+    #[command]
+    pub fn export_pdf(markdown: &str, filename: &str) -> Result<String, String> {
+        let tmp_dir = std::env::temp_dir();
+        let safe_name = filename.replace('/', "_").replace('\\', "_");
+        let output_path = tmp_dir.join(format!("mdviewer_{}.pdf", safe_name));
+        pdf_export::export_markdown_to_pdf(markdown, filename, &output_path).map_err(|e| e.to_string())?;
+        Ok(output_path.to_string_lossy().into_owned())
     }
 
     /// Read a file and return its content.
@@ -735,6 +745,7 @@ pub fn run() {
             commands::open_file_new_window,
             commands::get_about_info,
             commands::prepare_print_html,
+            commands::export_pdf,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
