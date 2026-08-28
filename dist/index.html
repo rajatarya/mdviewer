@@ -920,8 +920,7 @@
       try {
         await window.__TAURI__.shell.open(pdfPath);
       } catch (openErr) {
-        console.warn('shell.open failed, showing path', openErr);
-        alert('PDF exported to: ' + pdfPath);
+        console.error('shell.open failed', openErr);
       }
       return;
     } catch (e) {
