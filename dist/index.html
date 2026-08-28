@@ -564,9 +564,18 @@
 
   /* Toolbar — hide/show based on whether a file is loaded */
 
-  /* Paged media string set for filename */
-  body {
-    string-set: filename attr(data-filename);
+  /* Print footer - hidden on screen, shown in print */
+  .print-footer {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    text-align: center;
+    font-size: 9pt;
+    color: #333;
+    padding: 6pt 0;
+    border-top: 1px solid #ccc;
+    display: none;
   }
 
   /* Print styles */
@@ -622,17 +631,18 @@
     h1, h2, h3 {
       page-break-after: avoid;
     }
-    /* Footer with filename and page number */
+        /* Footer with filename and page number */
     @page {
-      margin: 0.5in 0.5in 0.8in 0.5in;
+      margin: 0.5in 0.5in 1.25in 0.5in;
       @bottom-center {
-        content: string(filename) "  Page " counter(page);
+        content: "Page " counter(page);
         font-size: 9pt;
         color: #333;
       }
     }
-    /* No fixed footer needed - using @page margin boxes */
-    /* Print footer will be shown via @media print below */
+    .print-footer {
+      display: block;
+    }
   }
 </style>
 </head>
@@ -1326,5 +1336,6 @@
 
   init();
 </script>
+<div class="print-footer" id="print-footer"><span id="print-filename"></span></div>
 </body>
 </html>
