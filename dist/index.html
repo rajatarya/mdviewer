@@ -858,14 +858,23 @@
   });
 
   /** Task 16: Print current markdown file. */
-  printBtn.addEventListener('click', () => {
+  printBtn.addEventListener('click', async () => {
     console.log('[mdviewer] Print button clicked', {filename: filenameEl.textContent, visible: printBtn.style.display});
     // Ensure filename is set for print CSS
     if (filenameEl.textContent) {
       document.body.dataset.filename = filenameEl.textContent;
     }
-    // Print synchronously to preserve user gesture
-    window.print();
+    // Use Tauri command to trigger print reliably, mirroring Export pattern
+    try {
+      // Get current window label via Tauri API
+      const currentWindow = window.__TAURI__?.window?.getCurrent?.();
+      const label = currentWindow?.label ?? 'main';
+      await window.__TAURI__.core.invoke('print_window', { label });
+    } catch (e) {
+      console.error('Print invoke failed', e);
+      // Fallback to direct print
+      window.print();
+    }
   });
 
   /** Listen for file-change events from the Rust backend. */
