@@ -104,7 +104,7 @@ mod commands {
     ) -> Result<(), String> {
         let window_count = app.webview_windows().len();
         // Use sanitized filename as label for easier identification
-        let sanitized = display.replace(|c| !c.is_alphanumeric(), "_");
+        let sanitized = display.chars().map(|c| if c.is_alphanumeric() { c } else { '_' }).collect::<String>();
         let label = format!("window-{}-{}", window_count, sanitized);
         let title = commands::window_title(display);
         let (x, y) = cascade_position(window_count);
@@ -669,12 +669,6 @@ pub fn run() {
                     let _ = webview.eval(&js);
                 }
             }
-        })
-        .on_webview_window_created(|app_handle, _window| {
-            // Rebuild menus when a new window is created to update Window menu titles
-            // Note: build_menus expects &tauri::App, but we have AppHandle; we can rebuild via a command or recreate menu here.
-            // For simplicity, we just log. Full rebuild requires app reference.
-            log::info!("on_webview_window_created: new window created, rebuilding menu");
         })
         .invoke_handler(tauri::generate_handler![
             commands::render_md,
