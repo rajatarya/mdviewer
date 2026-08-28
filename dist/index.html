@@ -567,7 +567,7 @@
   /* Print footer - hidden on screen, shown in print */
   .print-footer {
     position: fixed;
-    bottom: 0.5in;
+    bottom: 0;
     left: 0.5in;
     right: 0.5in;
     text-align: center;
@@ -633,7 +633,7 @@
     }
     /* Footer with filename and page number */
     @page {
-      margin: 0.5in 0.5in 0.8in 0.5in;
+      margin: 0.5in 0.5in 1.0in 0.5in;
       @bottom-center {
         content: "Page " counter(page);
         font-size: 9pt;
