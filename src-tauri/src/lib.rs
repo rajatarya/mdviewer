@@ -337,6 +337,23 @@ mod commands {
     }
 
     #[command]
+    pub fn get_about_info(_app_handle: tauri::AppHandle) -> Result<(String, String), String> {
+        let version = env!("CARGO_PKG_VERSION").to_string();
+        // Try to get git sha from environment or git command
+        let git_sha = std::process::Command::new("git")
+            .args(&["rev-parse", "HEAD"])
+            .output()
+            .ok()
+            .and_then(|out| if out.status.success() {
+                String::from_utf8(out.stdout).ok()
+            } else { None })
+            .unwrap_or_else(|| "unknown".to_string())
+            .trim()
+            .to_string();
+        Ok((version, git_sha))
+    }
+
+    #[command]
     pub fn open_file_new_window(app_handle: tauri::AppHandle) -> Result<(), String> {
         use tauri_plugin_dialog::DialogExt;
         // Open file dialog blocking but runs in spawn thread
@@ -575,15 +592,22 @@ pub fn run() {
                 let id = event.id().as_ref();
                 match id {
                     "app_about" => {
-                        // Show about info and open project homepage
+                        // Show about info with version and git sha, open project homepage
                         if let Some(window) = app_handle.get_webview_window("main") {
                             let _ = window.eval(r#"
-                                const info = `Markdown Viewer
-Version 1.8.0
-
-Project Homepage: https://github.com/rajatarya/mdviewer`;
-                                alert(info);
-                                window.open('https://github.com/rajatarya/mdviewer', '_blank');
+                                window.__TAURI__.core.invoke('get_about_info').then(([version, gitSha]) => {
+                                    const html = `<div style="font-family: system-ui; padding: 20px; max-width: 400px;"><h2>Markdown Viewer</h2><p><strong>Version:</strong> ${version}</p><p><strong>Git SHA:</strong> ${gitSha.substring(0, 12)}</p><p><strong>Project Homepage:</strong> <a href="https://github.com/rajatarya/mdviewer" target="_blank">https://github.com/rajatarya/mdviewer</a></p></div>`;
+                                    const modal = document.createElement('div');
+                                    modal.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;z-index:10000';
+                                    const box = document.createElement('div');
+                                    box.style.cssText = 'background:white;color:black;padding:20px;border-radius:8px;max-width:500px';
+                                    box.innerHTML = html + '<button onclick="this.closest(\'div\').remove()" style="margin-top:10px">Close</button>';
+                                    modal.appendChild(box);
+                                    document.body.appendChild(modal);
+                                }).catch(e => {
+                                    alert('Markdown Viewer\\nVersion unknown\\n\\nProject Homepage: https://github.com/rajatarya/mdviewer');
+                                    window.open('https://github.com/rajatarya/mdviewer', '_blank');
+                                });
                             "#);
                         }
                     }
@@ -703,6 +727,7 @@ Project Homepage: https://github.com/rajatarya/mdviewer`;
             commands::set_window_title,
             commands::print_window,
             commands::open_file_new_window,
+            commands::get_about_info,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
