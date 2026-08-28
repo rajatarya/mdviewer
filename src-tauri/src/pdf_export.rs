@@ -28,6 +28,18 @@ mod tests {
     }
 
     #[test]
+    fn test_export_contains_filename_and_content() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("content.pdf");
+        let markdown = "Hello World\nLine 2";
+        export_markdown_to_pdf(markdown, "test.md", &path).unwrap();
+        let content = fs::read_to_string(&path).unwrap();
+        assert!(content.contains("Filename: test.md"));
+        assert!(content.contains("Hello World"));
+        assert!(content.contains("Line 2"));
+    }
+
+    #[test]
     fn test_export_handles_empty_markdown() {
         let dir = tempdir().unwrap();
         let path = dir.path().join("empty.pdf");
