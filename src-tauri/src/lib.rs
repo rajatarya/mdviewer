@@ -431,26 +431,105 @@ pub fn run() {
         .plugin(open_file_plugin())
         .setup(|app| {
             log::info!("setup: initializing app");
-            // Build File menu with Print item
-            let print_item = tauri::menu::MenuItemBuilder::new("Print")
+
+            // Build menus
+            let open_item = tauri::menu::MenuItemBuilder::new("Open…")
+                .id("file_open")
+                .accelerator("CmdOrCtrl+O")
+                .build(app)?;
+            let export_item = tauri::menu::MenuItemBuilder::new("Export…")
+                .id("file_export")
+                .build(app)?;
+            let print_item = tauri::menu::MenuItemBuilder::new("Print…")
                 .id("print")
                 .accelerator("CmdOrCtrl+P")
                 .build(app)?;
-            let file_menu_item = tauri::menu::SubmenuBuilder::new(app, "File")
+            let close_item = tauri::menu::MenuItemBuilder::new("Close")
+                .id("file_close")
+                .accelerator("CmdOrCtrl+W")
+                .build(app)?;
+            let exit_item = tauri::menu::MenuItemBuilder::new("Exit")
+                .id("file_exit")
+                .accelerator("CmdOrCtrl+Q")
+                .build(app)?;
+
+            let file_menu = tauri::menu::SubmenuBuilder::new(app, "File")
+                .item(&open_item)
+                .item(&export_item)
+                .separator()
                 .item(&print_item)
+                .separator()
+                .item(&close_item)
+                .item(&exit_item)
                 .build()?;
+
+            let zoom_in_item = tauri::menu::MenuItemBuilder::new("Zoom In")
+                .id("view_zoom_in")
+                .accelerator("CmdOrCtrl+=")
+                .build(app)?;
+            let zoom_out_item = tauri::menu::MenuItemBuilder::new("Zoom Out")
+                .id("view_zoom_out")
+                .accelerator("CmdOrCtrl+-")
+                .build(app)?;
+            let zoom_reset_item = tauri::menu::MenuItemBuilder::new("Actual Size")
+                .id("view_zoom_reset")
+                .accelerator("CmdOrCtrl+0")
+                .build(app)?;
+            let theme_item = tauri::menu::MenuItemBuilder::new("Toggle Theme")
+                .id("view_toggle_theme")
+                .build(app)?;
+
+            let view_menu = tauri::menu::SubmenuBuilder::new(app, "View")
+                .item(&zoom_in_item)
+                .item(&zoom_out_item)
+                .item(&zoom_reset_item)
+                .separator()
+                .item(&theme_item)
+                .build()?;
+
+            // Window menu will be populated dynamically
+            let window_menu = tauri::menu::SubmenuBuilder::new(app, "Window")
+                .build()?;
+
             let menu = tauri::menu::MenuBuilder::new(app)
-                .item(&file_menu_item)
+                .item(&file_menu)
+                .item(&view_menu)
+                .item(&window_menu)
                 .build()?;
             app.set_menu(menu)?;
 
-            // Handle menu print event
+            // Handle menu events
             let app_handle = app.handle().clone();
             app.on_menu_event(move |app_handle, event| {
-                if event.id().as_ref() == "print" {
-                    if let Some(window) = app_handle.get_webview_window("main") {
-                        // Trigger print via webview
-                        let _ = window.print();
+                let id = event.id().as_ref();
+                if let Some(window) = app_handle.get_webview_window("main") {
+                    match id {
+                        "print" => { let _ = window.print(); }
+                        "file_open" => {
+                            let _ = window.eval("document.getElementById('open-btn')?.click()");
+                        }
+                        "file_export" => {
+                            let _ = window.eval("document.getElementById('export-btn')?.click()");
+                        }
+                        "file_close" => {
+                            let _ = window.close();
+                        }
+                        "file_exit" => {
+                            app_handle.exit(0);
+                        }
+                        "view_zoom_in" => {
+                            let _ = window.eval("document.getElementById('zoom-in-btn')?.click()");
+                        }
+                        "view_zoom_out" => {
+                            let _ = window.eval("document.getElementById('zoom-out-btn')?.click()");
+                        }
+                        "view_zoom_reset" => {
+                            let _ = window.eval("document.getElementById('zoom-reset-btn')?.click()");
+                        }
+                        "view_toggle_theme" => {
+                            let _ = window.eval("document.getElementById('theme-btn')?.click()");
+                        }
+                        _ => {}
                     }
                 }
             });
