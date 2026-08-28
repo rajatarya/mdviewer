@@ -321,6 +321,11 @@ mod commands {
         extract_frontmatter(markdown)
     }
 
+    #[command]
+    pub fn prepare_print_html(markdown_html: &str, filename: &str) -> String {
+        print::prepare_print_html(markdown_html, filename)
+    }
+
     /// Read a file and return its content.
     #[command]
     pub fn read_file(path: &str) -> Result<String, String> {
@@ -729,6 +734,7 @@ pub fn run() {
             commands::print_window,
             commands::open_file_new_window,
             commands::get_about_info,
+            commands::prepare_print_html,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
