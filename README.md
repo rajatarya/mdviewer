@@ -23,6 +23,24 @@
 
 ---
 
+## Latest Release: v1.8.0
+
+**Released 2026-08-28**
+
+- Printing support with system print dialog, Cmd+P shortcut, and print-optimized styling
+- 0.5in margins, blank header, footer with filename and page numbers `Page [x/y]`
+- File → Print menu item via Tauri MenuBuilder
+- App menu with About/Quit, File menu with Open/Export/Print/Close/Exit
+- View menu with Zoom In/Out/Actual Size/Toggle Theme
+- Dynamic Window menu listing open Markdown Viewer windows with Bring All to Front
+- About dialog shows version from Cargo.toml, Git SHA, and clickable Project Homepage link
+- Print button wired via Tauri `print_window` command mirroring Export pattern
+- All graphics/diagrams render in print preview
+
+See [Releases](https://github.com/rajatarya/mdviewer/releases) for the full changelog and download.
+
+---
+
 ## Features
 
 | Category | Supported |
