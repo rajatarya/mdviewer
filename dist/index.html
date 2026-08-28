@@ -621,21 +621,23 @@
     @page {
       margin: 0.5in;
       @bottom-center {
-        content: attr(data-filename) "  Page " counter(page) " / " counter(pages);
+        content: "Page " counter(page);
         font-size: 9pt;
         color: #333;
       }
     }
-    /* Fallback for browsers that don't support @page margin boxes */
-    body::after {
-      content: attr(data-filename) "  Page " counter(page) " / " counter(pages);
+    /* Fixed footer for print */
+    .print-footer {
       position: fixed;
-      bottom: 0.5in;
-      left: 0;
-      right: 0;
+      bottom: 0.6in;
+      left: 0.5in;
+      right: 0.5in;
       text-align: center;
       font-size: 9pt;
       color: #333;
+    }
+    .print-footer::before {
+      content: attr(data-filename);
     }
   }
 </style>
@@ -755,6 +757,8 @@
       e.preventDefault();
       if (printBtn && printBtn.style.display !== 'none') {
         document.body.dataset.filename = filenameEl.textContent || '';
+        const footer = document.querySelector('.print-footer');
+        if (footer) footer.dataset.filename = filenameEl.textContent || '';
         if (filenameEl.textContent) {
           const baseName = filenameEl.textContent.replace(/\.[^.]+$/, '');
           document.title = `${baseName}.pdf`;
@@ -883,6 +887,8 @@
     // Ensure filename is set for print CSS
     if (filenameEl.textContent) {
       document.body.dataset.filename = filenameEl.textContent;
+      const footer = document.querySelector('.print-footer');
+      if (footer) footer.dataset.filename = filenameEl.textContent;
       const baseName = filenameEl.textContent.replace(/\.[^.]+$/, '');
       document.title = `${baseName}.pdf`;
     }
@@ -1326,5 +1332,6 @@
 
   init();
 </script>
+<div class="print-footer" data-filename=""></div>
 </body>
 </html>
