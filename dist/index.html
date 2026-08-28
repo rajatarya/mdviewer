@@ -590,8 +590,18 @@
       transform: none !important;
     }
     .markdown-body {
-      font-size: 12pt;
+      font-size: 11pt;
       line-height: 1.5;
+    }
+    /* Scale down headings proportionally for print */
+    h1 { font-size: 18pt !important; }
+    h2 { font-size: 15pt !important; }
+    h3 { font-size: 13pt !important; }
+    /* Scale images and code blocks slightly */
+    img, svg {
+      max-width: 100% !important;
+      page-break-inside: avoid;
+      height: auto !important;
     }
     a {
       color: black !important;
@@ -745,7 +755,17 @@
       e.preventDefault();
       if (printBtn && printBtn.style.display !== 'none') {
         document.body.dataset.filename = filenameEl.textContent || '';
-        window.print();
+        if (filenameEl.textContent) {
+          const baseName = filenameEl.textContent.replace(/\.[^.]+$/, '');
+          document.title = `${baseName}.pdf`;
+        }
+        try {
+          const currentWindow = window.__TAURI__?.window?.getCurrent?.();
+          const label = currentWindow?.label ?? 'main';
+          window.__TAURI__.core.invoke('print_window', { label });
+        } catch {
+          window.print();
+        }
       }
       return;
     }
@@ -863,6 +883,8 @@
     // Ensure filename is set for print CSS
     if (filenameEl.textContent) {
       document.body.dataset.filename = filenameEl.textContent;
+      const baseName = filenameEl.textContent.replace(/\.[^.]+$/, '');
+      document.title = `${baseName}.pdf`;
     }
     // Use Tauri command to trigger print reliably, mirroring Export pattern
     try {
