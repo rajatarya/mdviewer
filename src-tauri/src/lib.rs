@@ -229,6 +229,29 @@ mod commands {
     }
 
     #[command]
+    pub fn open_file_new_window(app_handle: tauri::AppHandle) -> Result<(), String> {
+        use tauri_plugin_dialog::DialogExt;
+        // Open file dialog
+        let file_path = app_handle
+            .dialog()
+            .file()
+            .add_filter("Markdown", &["md", "markdown", "txt"])
+            .blocking_pick_file();
+        if let Some(path) = file_path {
+            if let Some(path_str) = path.as_path() {
+                let path_str = path_str.to_string_lossy().to_string();
+                if is_md_file(&path_str) {
+                    let display = path_str.split('/').next_back().unwrap_or(&path_str);
+                    // Create new window for file
+                    let _ = commands::create_window_for_file(&app_handle, &path_str, display);
+                    return Ok(());
+                }
+            }
+        }
+        Ok(())
+    }
+
+    #[command]
     pub fn watch_file(path: &str, app_handle: tauri::AppHandle) -> Result<String, String> {
         use std::path::PathBuf;
 
@@ -550,7 +573,8 @@ pub fn run() {
                             match id {
                                 "print" => { let _ = window.print(); }
                                 "file_open" => {
-                                    let _ = window.eval("document.getElementById('open-btn')?.click()");
+                                    // Open file dialog and create new window
+                                    let _ = commands::open_file_new_window(app_handle.clone());
                                 }
                                 "file_export" => {
                                     let _ = window.eval("document.getElementById('export-btn')?.click()");
@@ -643,6 +667,7 @@ pub fn run() {
             commands::create_window,
             commands::set_window_title,
             commands::print_window,
+            commands::open_file_new_window,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
