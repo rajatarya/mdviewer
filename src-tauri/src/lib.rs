@@ -435,6 +435,20 @@ pub fn run() {
         .setup(|app| {
             log::info!("setup: initializing app");
 
+            // App menu
+            let about_item = tauri::menu::MenuItemBuilder::new("About Markdown Viewer")
+                .id("app_about")
+                .build(app)?;
+            let quit_item = tauri::menu::MenuItemBuilder::new("Quit")
+                .id("app_quit")
+                .accelerator("CmdOrCtrl+Q")
+                .build(app)?;
+            let app_menu = tauri::menu::SubmenuBuilder::new(app, "Markdown Viewer")
+                .item(&about_item)
+                .separator()
+                .item(&quit_item)
+                .build()?;
+
             // Build menus
             let open_item = tauri::menu::MenuItemBuilder::new("Open…")
                 .id("file_open")
@@ -490,11 +504,16 @@ pub fn run() {
                 .item(&theme_item)
                 .build()?;
 
-            // Window menu will be populated dynamically
+            // Window menu
+            let bring_front_item = tauri::menu::MenuItemBuilder::new("Bring All to Front")
+                .id("window_bring_front")
+                .build(app)?;
             let window_menu = tauri::menu::SubmenuBuilder::new(app, "Window")
+                .item(&bring_front_item)
                 .build()?;
 
             let menu = tauri::menu::MenuBuilder::new(app)
+                .item(&app_menu)
                 .item(&file_menu)
                 .item(&view_menu)
                 .item(&window_menu)
@@ -505,34 +524,53 @@ pub fn run() {
             let app_handle = app.handle().clone();
             app.on_menu_event(move |_, event| {
                 let id = event.id().as_ref();
-                if let Some(window) = app_handle.get_webview_window("main") {
-                    match id {
-                        "print" => { let _ = window.print(); }
-                        "file_open" => {
-                            let _ = window.eval("document.getElementById('open-btn')?.click()");
+                match id {
+                    "app_about" => {
+                        // Simple about dialog via window eval alert for now
+                        if let Some(window) = app_handle.get_webview_window("main") {
+                            let _ = window.eval("alert('Markdown Viewer\\nVersion 1.6.0')");
                         }
-                        "file_export" => {
-                            let _ = window.eval("document.getElementById('export-btn')?.click()");
+                    }
+                    "app_quit" => {
+                        app_handle.exit(0);
+                    }
+                    _ => {
+                        if let Some(window) = app_handle.get_webview_window("main") {
+                            match id {
+                                "print" => { let _ = window.print(); }
+                                "file_open" => {
+                                    let _ = window.eval("document.getElementById('open-btn')?.click()");
+                                }
+                                "file_export" => {
+                                    let _ = window.eval("document.getElementById('export-btn')?.click()");
+                                }
+                                "file_close" => {
+                                    let _ = window.close();
+                                }
+                                "file_exit" => {
+                                    app_handle.exit(0);
+                                }
+                                "view_zoom_in" => {
+                                    let _ = window.eval("document.getElementById('zoom-in-btn')?.click()");
+                                }
+                                "view_zoom_out" => {
+                                    let _ = window.eval("document.getElementById('zoom-out-btn')?.click()");
+                                }
+                                "view_zoom_reset" => {
+                                    let _ = window.eval("document.getElementById('zoom-reset-btn')?.click()");
+                                }
+                                "view_toggle_theme" => {
+                                    let _ = window.eval("document.getElementById('theme-btn')?.click()");
+                                }
+                                "window_bring_front" => {
+                                    // Bring all windows to front
+                                    for win in app_handle.webview_windows().values() {
+                                        let _ = win.set_focus();
+                                    }
+                                }
+                                _ => {}
+                            }
                         }
-                        "file_close" => {
-                            let _ = window.close();
-                        }
-                        "file_exit" => {
-                            app_handle.exit(0);
-                        }
-                        "view_zoom_in" => {
-                            let _ = window.eval("document.getElementById('zoom-in-btn')?.click()");
-                        }
-                        "view_zoom_out" => {
-                            let _ = window.eval("document.getElementById('zoom-out-btn')?.click()");
-                        }
-                        "view_zoom_reset" => {
-                            let _ = window.eval("document.getElementById('zoom-reset-btn')?.click()");
-                        }
-                        "view_toggle_theme" => {
-                            let _ = window.eval("document.getElementById('theme-btn')?.click()");
-                        }
-                        _ => {}
                     }
                 }
             });
