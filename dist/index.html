@@ -906,9 +906,16 @@
     console.log('[mdviewer] Print button clicked', {filename: filenameEl.textContent, visible: printBtn.style.display});
     // Use Rust backend to export PDF with filename header/footer
     try {
-      const markdown = await window.__TAURI__.core.invoke('read_file', { path: currentFilePath });
+      const { invoke } = window.__TAURI__.core;
       const filename = filenameEl.textContent || 'document.md';
-      const pdfPath = await window.__TAURI__.core.invoke('export_pdf', { markdown, filename });
+      let markdown = currentContent;
+      if (currentFilePath && !markdown) {
+        markdown = await invoke('read_file', { path: currentFilePath });
+      }
+      if (!markdown) {
+        throw new Error('No markdown content available');
+      }
+      const pdfPath = await invoke('export_pdf', { markdown, filename });
       // Open PDF with default app
       await window.__TAURI__.shell.open(pdfPath);
       return;
