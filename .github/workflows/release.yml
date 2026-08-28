@@ -39,7 +39,7 @@ jobs:
         run: npm install -g @tauri-apps/cli
 
       - name: Build Tauri app
-        run: cd src-tauri && tauri build
+        run: make release
 
       - name: Find DMG assets
         id: dmg
