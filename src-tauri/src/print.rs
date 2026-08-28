@@ -23,7 +23,7 @@ pub fn prepare_print_html(markdown_html: &str, filename: &str) -> String {
 <title>Print</title>
 <style>
   @media screen {{
-    .print-footer {{ display: none; }}
+    .print-footer, .print-header {{ display: none; }}
   }}
   @media print {{
     @page {{
@@ -33,6 +33,18 @@ pub fn prepare_print_html(markdown_html: &str, filename: &str) -> String {
         font-size: 9pt;
         color: #333;
       }}
+    }}
+    .print-header {{
+      position: fixed;
+      top: 0.25in;
+      left: 0;
+      right: 0;
+      text-align: center;
+      font-size: 9pt;
+      color: #333;
+      border-bottom: 1px solid #ccc;
+      padding-bottom: 4pt;
+      display: block;
     }}
     .print-footer {{
       position: fixed;
@@ -48,10 +60,11 @@ pub fn prepare_print_html(markdown_html: &str, filename: &str) -> String {
     }}
   }}
   body {{ margin: 0; padding: 0; }}
-  .print-content {{ padding: 0.5in; }}
+  .print-content {{ padding: 0.5in 0.5in 1.25in 0.5in; }}
 </style>
 </head>
 <body>
+<div class="print-header">Filename: {escaped_filename}</div>
 <div class="print-content">
 {markdown_html}
 </div>
@@ -78,6 +91,13 @@ mod tests {
         let html = prepare_print_html("<p>content</p>", "test.md");
         assert!(html.contains(r#"class="print-footer""#));
         assert!(html.contains(r#"data-filename="test.md""#));
+    }
+
+    #[test]
+    fn test_prepare_print_html_contains_header_element() {
+        let html = prepare_print_html("<p>content</p>", "test.md");
+        assert!(html.contains(r#"class="print-header""#));
+        assert!(html.contains("Filename: test.md"));
     }
 
     #[test]
