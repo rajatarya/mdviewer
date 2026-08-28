@@ -81,6 +81,103 @@ mod commands {
         format!("{} : Markdown Viewer", filename)
     }
 
+    fn build_menus_from_app<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> Result<tauri::menu::Menu<R>, Box<dyn std::error::Error>> {
+        // App menu
+        let about_item = tauri::menu::MenuItemBuilder::new("About Markdown Viewer")
+            .id("app_about")
+            .build(app)?;
+        let quit_item = tauri::menu::MenuItemBuilder::new("Quit")
+            .id("app_quit")
+            .accelerator("CmdOrCtrl+Q")
+            .build(app)?;
+        let app_menu = tauri::menu::SubmenuBuilder::new(app, "Markdown Viewer")
+            .item(&about_item)
+            .separator()
+            .item(&quit_item)
+            .build()?;
+
+        // File menu
+        let open_item = tauri::menu::MenuItemBuilder::new("Open…")
+            .id("file_open")
+            .accelerator("CmdOrCtrl+O")
+            .build(app)?;
+        let export_item = tauri::menu::MenuItemBuilder::new("Export…")
+            .id("file_export")
+            .build(app)?;
+        let print_item = tauri::menu::MenuItemBuilder::new("Print…")
+            .id("print")
+            .accelerator("CmdOrCtrl+P")
+            .build(app)?;
+        let close_item = tauri::menu::MenuItemBuilder::new("Close")
+            .id("file_close")
+            .accelerator("CmdOrCtrl+W")
+            .build(app)?;
+        let exit_item = tauri::menu::MenuItemBuilder::new("Exit")
+            .id("file_exit")
+            .accelerator("CmdOrCtrl+Q")
+            .build(app)?;
+
+        let file_menu = tauri::menu::SubmenuBuilder::new(app, "File")
+            .item(&open_item)
+            .item(&export_item)
+            .separator()
+            .item(&print_item)
+            .separator()
+            .item(&close_item)
+            .item(&exit_item)
+            .build()?;
+
+        // View menu
+        let zoom_in_item = tauri::menu::MenuItemBuilder::new("Zoom In")
+            .id("view_zoom_in")
+            .accelerator("CmdOrCtrl+=")
+            .build(app)?;
+        let zoom_out_item = tauri::menu::MenuItemBuilder::new("Zoom Out")
+            .id("view_zoom_out")
+            .accelerator("CmdOrCtrl+-")
+            .build(app)?;
+        let zoom_reset_item = tauri::menu::MenuItemBuilder::new("Actual Size")
+            .id("view_zoom_reset")
+            .accelerator("CmdOrCtrl+0")
+            .build(app)?;
+        let theme_item = tauri::menu::MenuItemBuilder::new("Toggle Theme")
+            .id("view_toggle_theme")
+            .build(app)?;
+
+        let view_menu = tauri::menu::SubmenuBuilder::new(app, "View")
+            .item(&zoom_in_item)
+            .item(&zoom_out_item)
+            .item(&zoom_reset_item)
+            .separator()
+            .item(&theme_item)
+            .build()?;
+
+        // Window menu
+        let mut window_submenu_builder = tauri::menu::SubmenuBuilder::new(app, "Window");
+        let bring_front_item = tauri::menu::MenuItemBuilder::new("Bring All to Front")
+            .id("window_bring_front")
+            .build(app)?;
+        window_submenu_builder = window_submenu_builder.item(&bring_front_item);
+        window_submenu_builder = window_submenu_builder.separator();
+        for (label, window) in app.webview_windows().iter() {
+            let title = window.title().unwrap_or_else(|_| label.clone());
+            let item_id = format!("window_{}", label);
+            let item = tauri::menu::MenuItemBuilder::new(title)
+                .id(&item_id)
+                .build(app)?;
+            window_submenu_builder = window_submenu_builder.item(&item);
+        }
+        let window_menu = window_submenu_builder.build()?;
+
+        let menu = tauri::menu::MenuBuilder::new(app)
+            .item(&app_menu)
+            .item(&file_menu)
+            .item(&view_menu)
+            .item(&window_menu)
+            .build()?;
+        Ok(menu)
+    }
+
     /// Cascade offset for the Nth secondary window so each new window lands
     /// at a distinct, visible position rather than stacking on top of the
     /// previous one. Tauri / AppKit do not consistently auto-cascade when
@@ -128,6 +225,10 @@ mod commands {
             "create_window_for_file: window created successfully for {}",
             file_path
         );
+        // Rebuild menu to include new window in Window menu
+        if let Ok(menu) = build_menus_from_app(app) {
+            let _ = app.set_menu(menu);
+        }
         Ok(())
     }
 
@@ -460,100 +561,7 @@ pub fn run() {
         .setup(|app| {
             log::info!("setup: initializing app");
 
-            // App menu
-            let about_item = tauri::menu::MenuItemBuilder::new("About Markdown Viewer")
-                .id("app_about")
-                .build(app)?;
-            let quit_item = tauri::menu::MenuItemBuilder::new("Quit")
-                .id("app_quit")
-                .accelerator("CmdOrCtrl+Q")
-                .build(app)?;
-            let app_menu = tauri::menu::SubmenuBuilder::new(app, "Markdown Viewer")
-                .item(&about_item)
-                .separator()
-                .item(&quit_item)
-                .build()?;
-
-            // Build menus
-            let open_item = tauri::menu::MenuItemBuilder::new("Open…")
-                .id("file_open")
-                .accelerator("CmdOrCtrl+O")
-                .build(app)?;
-            let export_item = tauri::menu::MenuItemBuilder::new("Export…")
-                .id("file_export")
-                .build(app)?;
-            let print_item = tauri::menu::MenuItemBuilder::new("Print…")
-                .id("print")
-                .accelerator("CmdOrCtrl+P")
-                .build(app)?;
-            let close_item = tauri::menu::MenuItemBuilder::new("Close")
-                .id("file_close")
-                .accelerator("CmdOrCtrl+W")
-                .build(app)?;
-            let exit_item = tauri::menu::MenuItemBuilder::new("Exit")
-                .id("file_exit")
-                .accelerator("CmdOrCtrl+Q")
-                .build(app)?;
-
-            let file_menu = tauri::menu::SubmenuBuilder::new(app, "File")
-                .item(&open_item)
-                .item(&export_item)
-                .separator()
-                .item(&print_item)
-                .separator()
-                .item(&close_item)
-                .item(&exit_item)
-                .build()?;
-
-            let zoom_in_item = tauri::menu::MenuItemBuilder::new("Zoom In")
-                .id("view_zoom_in")
-                .accelerator("CmdOrCtrl+=")
-                .build(app)?;
-            let zoom_out_item = tauri::menu::MenuItemBuilder::new("Zoom Out")
-                .id("view_zoom_out")
-                .accelerator("CmdOrCtrl+-")
-                .build(app)?;
-            let zoom_reset_item = tauri::menu::MenuItemBuilder::new("Actual Size")
-                .id("view_zoom_reset")
-                .accelerator("CmdOrCtrl+0")
-                .build(app)?;
-            let theme_item = tauri::menu::MenuItemBuilder::new("Toggle Theme")
-                .id("view_toggle_theme")
-                .build(app)?;
-
-            let view_menu = tauri::menu::SubmenuBuilder::new(app, "View")
-                .item(&zoom_in_item)
-                .item(&zoom_out_item)
-                .item(&zoom_reset_item)
-                .separator()
-                .item(&theme_item)
-                .build()?;
-
-            // Window menu with list of open windows
-            let mut window_submenu_builder = tauri::menu::SubmenuBuilder::new(app, "Window");
-            // Add Bring All to Front at top
-            let bring_front_item = tauri::menu::MenuItemBuilder::new("Bring All to Front")
-                .id("window_bring_front")
-                .build(app)?;
-            window_submenu_builder = window_submenu_builder.item(&bring_front_item);
-            window_submenu_builder = window_submenu_builder.separator();
-            // List existing windows
-            for (label, window) in app.webview_windows().iter() {
-                let title = window.title().unwrap_or_else(|_| label.clone());
-                let item_id = format!("window_{}", label);
-                let item = tauri::menu::MenuItemBuilder::new(title)
-                    .id(&item_id)
-                    .build(app)?;
-                window_submenu_builder = window_submenu_builder.item(&item);
-            }
-            let window_menu = window_submenu_builder.build()?;
-
-            let menu = tauri::menu::MenuBuilder::new(app)
-                .item(&app_menu)
-                .item(&file_menu)
-                .item(&view_menu)
-                .item(&window_menu)
-                .build()?;
+            let menu = build_menus_from_app(&app.handle())?;
             app.set_menu(menu)?;
 
             // Handle menu events
@@ -564,7 +572,7 @@ pub fn run() {
                     "app_about" => {
                         // Simple about dialog via window eval alert for now
                         if let Some(window) = app_handle.get_webview_window("main") {
-                            let _ = window.eval("alert('Markdown Viewer\\nVersion 1.6.0')");
+                            let _ = window.eval("alert('Markdown Viewer\\nVersion 1.8.0\\n\\nGitHub: https://github.com/rajat-arya/mdviewer')");
                         }
                     }
                     "app_quit" => {
