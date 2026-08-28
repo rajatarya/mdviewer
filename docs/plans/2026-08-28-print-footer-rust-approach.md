@@ -39,56 +39,59 @@ Status: Footer not rendering reliably.
 ## Proposed Rust-side Approach
 
 ### Goal
-Generate a print-ready HTML document server-side in Rust with footer injected per page, then print that document via Tauri.
+Generate a PDF server-side in Rust with filename in header/footer on every page, then open the PDF with the system default viewer. Print button becomes Export to PDF.
 
 ### Rationale
-- WebKit print CSS is unreliable for dynamic footers.
-- Rust can pre-render markdown to HTML with pagination markers.
-- Full control over footer content per page.
+- WKWebView print on macOS does not reliably repeat `position: fixed` elements per page.
+- `@page` margin boxes cannot contain dynamic HTML/attributes in WKWebView.
+- Server-side PDF generation gives full control over pagination, headers, footers, and fonts.
 
 ### Architecture
-1. **New Rust module**: `src-tauri/src/print.rs`
-   - Function `prepare_print_html(markdown_html: &str, filename: &str) -> String`
-   - Injects `<style>` with `@page` margins and a fixed footer element.
-   - Uses `printpdf` crate or `weasyprint` style pagination? Alternative: inject footer via CSS `position: fixed` but generate HTML with explicit page breaks.
+1. **New Rust module**: `src-tauri/src/pdf_export.rs`
+   - Function `export_markdown_to_pdf(markdown: &str, filename: &str, output_path: &Path) -> Result<()>`
+   - Render markdown to HTML via `pulldown-cmark`
+   - Convert HTML to PDF with headers/footers:
+     * Option A: `weasyprint` via subprocess or `weasyprint-rs`
+     * Option B: `printpdf` + `html2pdf` style layout
+     * Option C: Render HTML to PDF via `wkhtmltopdf` subprocess
 
-2. **Simplified approach**: Use `position: fixed` footer but generate HTML with:
-   - Body content wrapped in `.print-content`
-   - Footer element with `position: fixed; bottom: 0;`
-   - Ensure footer is present in DOM before print.
+2. **Simplified initial approach**: Use `weasyprint` via command-line subprocess
+   - Generate print-ready HTML with CSS `@page` margins
+   - Invoke `weasyprint input.html output.pdf`
+   - WeasyPrint supports `@page` margin boxes with `content` and can include filename via HTML template
 
-3. **Better approach**: Use `tauri-plugin-printer` or `webview.print()` with custom HTML:
-   - When print requested, Rust backend generates a new HTML string with:
-     - Original rendered markdown
-     - Footer element with filename
-     - CSS `@page` margins
-   - Load HTML into a hidden webview or reuse current webview with `set_html`.
+3. **Tauri integration**
+   - New command `export_pdf(markdown, filename) -> Result<String, String>`
+   - Writes PDF to temp dir, returns path
+   - Frontend opens PDF via `open` command or `tauri-plugin-opener`
 
 4. **Implementation steps**:
-   - Add `print_html` command to Tauri backend.
-   - Command receives current HTML content and filename.
-   - Generates print-ready HTML with footer.
-   - Calls `webview.print()` on that HTML.
+   - Add PDF export command to Tauri backend
+   - Command renders markdown, generates print HTML with header/footer placeholders
+   - Calls weasyprint to produce PDF
+   - Returns PDF path to frontend
+   - Frontend opens PDF with system default app
 
 ### TDD Plan
-1. **Unit tests for `prepare_print_html`**:
-   - `test_prepare_print_html_contains_filename` – output contains filename string
-   - `test_prepare_print_html_contains_footer_element` – output contains `.print-footer` div with correct id
-   - `test_prepare_print_html_preserves_content` – original markdown HTML is preserved inside `.print-content`
-   - `test_prepare_print_html_escapes_filename` – filename with HTML special chars is escaped
-   - `test_prepare_print_html_has_print_css` – output contains `@media print` and `@page` rules
+1. **Unit tests for `export_markdown_to_pdf`**:
+   - `test_export_creates_pdf_file` – output file exists and is non-empty
+   - `test_export_contains_filename` – PDF text extraction contains filename
+   - `test_export_handles_empty_markdown` – empty input produces valid PDF
+   - `test_export_escapes_filename` – filename with special chars is handled safely
+   - `test_export_preserves_markdown_content` – rendered markdown text appears in PDF
 
 2. **Integration tests**:
-   - `test_print_html_generation_with_real_markdown` – render sample markdown via `pulldown-cmark`, generate print HTML, assert footer present
-   - `test_print_html_multiple_pages` – long content with page breaks, verify footer element is present once and CSS ensures repeat
-   - `test_print_html_filename_edge_cases` – empty filename, long filename, unicode filename
+   - `test_export_with_real_markdown` – render sample markdown via `pulldown-cmark`, export PDF, assert filename and content present
+   - `test_export_multipage` – long markdown produces PDF with multiple pages, filename appears on each page
+   - `test_export_filename_edge_cases` – empty, long, unicode filenames
 
 3. **Automated PDF verification**:
-   - Use headless Chrome via `puppeteer` in CI to load generated HTML, print to PDF, extract text with `pdf-parse`, assert filename appears on each page
+   - Use `pdf-parse` or `pdfium` to extract text from generated PDF in CI
+   - Assert filename appears on first page and page count > 1 for long content
    - Test runs on PR via GitHub Actions
 
 4. **Manual verification**:
-   - Run mdviewer, open file, print, verify footer appears on every page in system print preview
+   - Run mdviewer, click Print, PDF opens in Preview, verify filename in header/footer on every page
 
 ### Acceptance Criteria
 - Filename appears at bottom of every printed page.
