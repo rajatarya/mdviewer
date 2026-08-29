@@ -637,7 +637,9 @@ pub fn run() {
                         app_handle.exit(0);
                     }
                     _ => {
-                        if let Some(window) = app_handle.get_webview_window("main") {
+                        // Find the focused window
+                        let window = app_handle.webview_windows().values().find(|w| w.is_focused().unwrap_or(false)).cloned();
+                        if let Some(window) = window {
                             match id {
                                 "print" => {
                                     let _ = window.eval(r#"
