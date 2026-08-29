@@ -106,6 +106,12 @@ This downloads the latest release `.dmg`, mounts it, copies the app to `~/Applic
 - Rust 1.94+ stable (`rustup`)
 - Node.js 18+ (for Tauri CLI)
 - Xcode Command Line Tools
+- `weasyprint` (optional, for PDF export with proper pagination and headers/footers)
+  ```bash
+  brew install weasyprint
+  ```
+
+If `weasyprint` is not installed, PDF export falls back to a minimal text-based PDF.
 
 ```bash
 # Clone the repo

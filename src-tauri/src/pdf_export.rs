@@ -26,11 +26,6 @@ pub fn export_markdown_to_pdf(markdown: &str, filename: &str, output_path: &Path
 @page {{
   size: A4;
   margin: 2cm 2cm 2.5cm 2cm;
-  @top-center {{
-    content: "{filename}";
-    font-size: 10pt;
-    color: #666;
-  }}
   @bottom-center {{
     content: "{filename} - Page " counter(page) " of " counter(pages);
     font-size: 9pt;
