@@ -27,16 +27,17 @@ pub fn export_markdown_to_pdf(markdown: &str, filename: &str, output_path: &Path
   margin: 2cm 2cm 2.5cm 2cm;
   @bottom-center {{
     content: "{filename} - Page " counter(page) " of " counter(pages);
-    font-size: 9pt;
+    font-size: 7pt;
     color: #666;
   }}
 }}
 body {{
   font-family: Helvetica, Arial, sans-serif;
   line-height: 1.5;
+  font-size: 8pt;
 }}
-h1 {{ font-size: 18pt; }}
-p {{ font-size: 10pt; }}
+h1 {{ font-size: 14pt; }}
+p {{ font-size: 8pt; }}
 </style>
 </head>
 <body>
