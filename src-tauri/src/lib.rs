@@ -597,6 +597,7 @@ pub fn run() {
     builder
         .plugin(tauri_plugin_log::Builder::new().build())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_shell::init())
         .plugin(open_file_plugin())
         .setup(|app| {
             log::info!("setup: initializing app");
