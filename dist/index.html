@@ -655,7 +655,6 @@
   <button id="open-btn" title="Open file">📂 Open</button>
   <span class="filename" id="filename" style="display:none"></span>
   <span class="title" id="app-title">Markdown Viewer</span>
-  <button id="export-btn" title="Export as HTML" style="display:none">💾 Export</button>
   <button id="print-btn" title="Print" style="display:none">🖨️ Print</button>
   <button id="theme-btn" title="Toggle theme">🌙</button>
   <div class="zoom-group">
@@ -684,7 +683,6 @@
 
   const preview = document.getElementById('preview');
   const filenameEl = document.getElementById('filename');
-  const exportBtn = document.getElementById('export-btn');
   const printBtn = document.getElementById('print-btn');
   const themeBtn = document.getElementById('theme-btn');
 
@@ -863,7 +861,6 @@
       openBtn.style.display = 'none';
       filenameEl.style.display = 'inline';
       document.getElementById('app-title').style.display = 'none';
-      exportBtn.style.display = 'inline';
       document.getElementById('print-btn').style.display = 'inline';
 
       // Start file watching for live updates (Task 14)
@@ -879,34 +876,6 @@
       preview.innerHTML = `<p style="color:red">Error: ${err}</p>`;
     }
   }
-
-  /** Task 15: Export current content as a standalone HTML file. */
-  exportBtn.addEventListener('click', async () => {
-    if (!currentContent) return;
-    try {
-      const title = filenameEl.textContent || 'export';
-      // Use Tauri 2.x dialog plugin via invoke
-      // In Tauri 2.x, plugin commands use the format "plugin:<name>|<command>"
-      const outputPath = await invoke('plugin:dialog|save', {
-        options: {
-          title: 'Export HTML',
-          filters: [{ name: 'HTML', extensions: ['html'] }],
-          defaultPath: title + '.html',
-        },
-      });
-      if (!outputPath) return; // user cancelled
-      await invoke('export_html', {
-        content: currentContent,
-        outputPath: outputPath,
-        title: title,
-      });
-      preview.innerHTML = `<p style="color:green">✅ Exported to ${outputPath.split('/').pop()}</p>`;
-      setTimeout(() => doRender(currentContent), 1500);
-    } catch (err) {
-      console.error('Export failed:', err);
-      preview.innerHTML = `<p style="color:red">Export failed: ${err}</p>`;
-    }
-  });
 
   /** Task 16: Print current markdown file. */
   printBtn.addEventListener('click', async () => {
@@ -966,7 +935,6 @@
     openBtn.style.display = 'none';
     filenameEl.style.display = 'inline';
     document.getElementById('app-title').style.display = 'none';
-    exportBtn.style.display = 'inline';
 
     await doRender(content);
   }
