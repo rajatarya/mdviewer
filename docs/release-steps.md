@@ -44,6 +44,18 @@
    - Add description of changes since last release
    - Mark as latest release if successful
 
+8. **Update README Colophon & Agent Bookkeeping**
+   - Update `README.md` Colophon `Commit attribution` section with current counts:
+     - Count pi.dev commits, omp harness commits, Claude Code commits
+     - Update model names/harnesses if changed
+     - Keep attribution as of the new version tag
+   - Commit README update separately:
+     ```bash
+     git add README.md
+     git commit -m "docs: update README colophon with commit attribution for vX.Y.Z"
+     git push origin main
+     ```
+
 ## Notes
 - Release workflow builds `.dmg` automatically
 - Do not commit until tests pass
