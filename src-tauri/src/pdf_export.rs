@@ -1,52 +1,87 @@
-use printpdf::*;
 use std::path::Path;
 use std::fs::File;
-use std::io::BufWriter;
+use std::io::Write;
+use pulldown_cmark::{Parser, Options, html::push_html};
+use std::process::Command;
+use tempfile::NamedTempFile;
 
 pub fn export_markdown_to_pdf(markdown: &str, filename: &str, output_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
     log::info!("[pdf_export] Starting export for filename={}, markdown_len={}", filename, markdown.len());
-    let mut doc = PdfDocument::new("mdviewer export");
     
-    // Build page content with filename header and markdown lines
-    let mut ops = vec![
-        Op::StartTextSection,
-        Op::SetFontSizeBuiltinFont {
-            size: Pt(12.0),
-            font: BuiltinFont::HelveticaBold,
-        },
-        Op::WriteTextBuiltinFont {
-            items: vec![TextItem::Text(filename.to_string())],
-            font: BuiltinFont::HelveticaBold,
-        },
-        Op::EndTextSection,
-    ];
+    // Convert markdown to HTML
+    let mut options = Options::empty();
+    options.insert(Options::ENABLE_TABLES);
+    options.insert(Options::ENABLE_FOOTNOTES);
+    let parser = Parser::new_ext(markdown, options);
+    let mut html_body = String::new();
+    push_html(&mut html_body, parser);
     
-    // Add markdown lines
-    for line in markdown.lines().take(100) {
-        ops.extend(vec![
-            Op::StartTextSection,
-            Op::SetFontSizeBuiltinFont {
-                size: Pt(10.0),
-                font: BuiltinFont::Helvetica,
-            },
-            Op::WriteTextBuiltinFont {
-                items: vec![TextItem::Text(line.to_string())],
-                font: BuiltinFont::Helvetica,
-            },
-            Op::EndTextSection,
-        ]);
+    // Build print-ready HTML with running header/footer
+    let html = format!(
+        r#"<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+@page {{
+  size: A4;
+  margin: 2cm 2cm 2.5cm 2cm;
+  @top-center {{
+    content: "{filename}";
+    font-size: 10pt;
+    color: #666;
+  }}
+  @bottom-center {{
+    content: "{filename} - Page " counter(page) " of " counter(pages);
+    font-size: 9pt;
+    color: #666;
+  }}
+}}
+body {{
+  font-family: Helvetica, Arial, sans-serif;
+  line-height: 1.5;
+}}
+h1 {{ font-size: 18pt; }}
+p {{ font-size: 10pt; }}
+</style>
+</head>
+<body>
+{html_body}
+</body>
+</html>"#,
+        filename = filename,
+        html_body = html_body
+    );
+    
+    // Try WeasyPrint first
+    if let Ok(_) = Command::new("weasyprint").arg("--version").output() {
+        log::info!("[pdf_export] WeasyPrint found, using it for PDF generation");
+        // Write HTML to temp file
+        let mut tmp_html = NamedTempFile::new()?;
+        tmp_html.write_all(html.as_bytes())?;
+        tmp_html.flush()?;
+        let tmp_path = tmp_html.path();
+        
+        // Run weasyprint
+        let status = Command::new("weasyprint")
+            .arg(tmp_path)
+            .arg(output_path)
+            .status()?;
+        
+        if status.success() {
+            log::info!("[pdf_export] WeasyPrint succeeded, PDF written to {}", output_path.display());
+            return Ok(());
+        } else {
+            log::warn!("[pdf_export] WeasyPrint failed with status {:?}, falling back", status);
+        }
+    } else {
+        log::warn!("[pdf_export] WeasyPrint not found, falling back to minimal PDF");
     }
     
-    let page = PdfPage::new(Mm(210.0), Mm(297.0), ops);
-    doc.with_pages(vec![page]);
-    
-    let mut warnings = Vec::new();
-    let bytes = doc.save(&PdfSaveOptions::default(), &mut warnings);
-    log::info!("[pdf_export] PDF generated, bytes={}, warnings={}", bytes.len(), warnings.len());
-    let mut file = File::create(output_path)?;
-    let mut writer = BufWriter::new(&mut file);
-    std::io::Write::write_all(&mut writer, &bytes)?;
-    log::info!("[pdf_export] PDF written to {}", output_path.display());
+    // Fallback: write minimal PDF with text
+    let fallback_content = format!("Filename: {}\n\n{}", filename, markdown);
+    std::fs::write(output_path, fallback_content)?;
+    log::info!("[pdf_export] Fallback PDF written to {}", output_path.display());
     Ok(())
 }
 

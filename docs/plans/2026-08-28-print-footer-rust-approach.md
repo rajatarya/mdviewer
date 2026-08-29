@@ -46,29 +46,27 @@ Generate a PDF server-side in Rust with filename in header/footer on every page,
 - `@page` margin boxes cannot contain dynamic HTML/attributes in WKWebView.
 - Server-side PDF generation gives full control over pagination, headers, footers, and fonts.
 
-### Architecture
+### Architecture v2 – WeasyPrint Soft Dependency
 1. **New Rust module**: `src-tauri/src/pdf_export.rs`
    - Function `export_markdown_to_pdf(markdown: &str, filename: &str, output_path: &Path) -> Result<()>`
    - Render markdown to HTML via `pulldown-cmark`
-   - Convert HTML to PDF with headers/footers:
-     * Option A: `weasyprint` via subprocess or `weasyprint-rs`
-     * Option B: `printpdf` + `html2pdf` style layout
-     * Option C: Render HTML to PDF via `wkhtmltopdf` subprocess
+   - Convert HTML to PDF using WeasyPrint subprocess with graceful fallback
 
-2. **Simplified initial approach**: Use `weasyprint` via command-line subprocess
-   - Generate print-ready HTML with CSS `@page` margins
-   - Invoke `weasyprint input.html output.pdf`
-   - WeasyPrint supports `@page` margin boxes with `content` and can include filename via HTML template
+2. **WeasyPrint Integration**
+   - Generate print-ready HTML with CSS `@page` margins and `running()` elements for filename/header/footer
+   - Invoke `weasyprint input.html output.pdf` via `std::process::Command`
+   - Soft dependency: if `weasyprint` binary not found, fall back to minimal PDF with text content
+   - WeasyPrint supports `@page` margin boxes, running headers/footers, and proper pagination
 
 3. **Tauri integration**
    - New command `export_pdf(markdown, filename) -> Result<String, String>`
    - Writes PDF to temp dir, returns path
-   - Frontend opens PDF via `open` command or `tauri-plugin-opener`
+   - Frontend opens PDF via `tauri-plugin-opener`
 
 4. **Implementation steps**:
    - Add PDF export command to Tauri backend
    - Command renders markdown, generates print HTML with header/footer placeholders
-   - Calls weasyprint to produce PDF
+   - Check for `weasyprint` binary, if present use it; else fallback
    - Returns PDF path to frontend
    - Frontend opens PDF with system default app
 
@@ -112,3 +110,5 @@ Generate a PDF server-side in Rust with filename in header/footer on every page,
 
 ## History
 - 2026-08-28: Started Rust-side approach after CSS attempts failed.
+- 2026-08-28: Switched to WeasyPrint soft dependency with graceful fallback
+- 2026-08-28: Implemented WeasyPrint subprocess with fallback, TDD tests passing
