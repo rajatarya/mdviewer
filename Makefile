@@ -34,8 +34,9 @@ uninstall:
 	./bin/install.sh --uninstall
 
 # Run the Tauri app (requires Tauri CLI)
+# Arguments passed to make are forwarded to cargo tauri dev
 run:
-	cd src-tauri && cargo tauri dev
+	cd src-tauri && cargo tauri dev $(filter-out $@,$(MAKECMDGOALS))
 
 # Format all code
 fmt:

@@ -7,6 +7,19 @@
   ],
   "permissions": [
     "core:default",
-    "dialog:default"
+    "dialog:default",
+    "dialog:allow-save",
+    "shell:allow-open",
+    "opener:default",
+    "core:event:allow-listen"
+  ],
+  "capabilities": [
+    {
+      "identifier": "shell-open",
+      "description": "Allow opening files",
+      "permissions": [
+        "shell:allow-open"
+      ]
+    }
   ]
 }

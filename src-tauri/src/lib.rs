@@ -1,8 +1,11 @@
-// Markdown rendering core
+ // Markdown rendering core
 
 use pulldown_cmark::{html::push_html, Options, Parser};
 use tauri::{command, AppHandle, Manager, RunEvent, WebviewUrl, WebviewWindowBuilder};
+use tauri_plugin_opener::OpenerExt;
 
+mod print;
+mod pdf_export;
 mod commands {
     use super::*;
     use std::collections::hash_map::DefaultHasher;
@@ -103,9 +106,6 @@ mod commands {
             .id("file_open")
             .accelerator("CmdOrCtrl+O")
             .build(app)?;
-        let export_item = tauri::menu::MenuItemBuilder::new("Export…")
-            .id("file_export")
-            .build(app)?;
         let print_item = tauri::menu::MenuItemBuilder::new("Print…")
             .id("print")
             .accelerator("CmdOrCtrl+P")
@@ -121,7 +121,6 @@ mod commands {
 
         let file_menu = tauri::menu::SubmenuBuilder::new(app, "File")
             .item(&open_item)
-            .item(&export_item)
             .separator()
             .item(&print_item)
             .separator()
@@ -318,6 +317,27 @@ mod commands {
     #[command]
     pub fn extract_fm(markdown: &str) -> (String, String) {
         extract_frontmatter(markdown)
+    }
+
+    #[command]
+    pub fn prepare_print_html(markdown_html: &str, filename: &str) -> String {
+        print::prepare_print_html(markdown_html, filename)
+    }
+
+    #[command]
+    pub fn export_pdf(markdown: &str, filename: &str) -> Result<String, String> {
+        log::info!("[export_pdf] Requested export for filename={}, markdown_len={}", filename, markdown.len());
+        let tmp_dir = std::env::temp_dir();
+        let safe_name = filename.replace('/', "_").replace('\\', "_");
+        let output_path = tmp_dir.join(format!("mdviewer_{}.pdf", safe_name));
+        pdf_export::export_markdown_to_pdf(markdown, filename, &output_path).map_err(|e| e.to_string())?;
+        log::info!("[export_pdf] Export succeeded, path={}", output_path.display());
+        Ok(output_path.to_string_lossy().into_owned())
+    }
+
+    #[command]
+    pub async fn open_pdf(app_handle: tauri::AppHandle, path: String) -> Result<(), String> {
+        app_handle.opener().open_path(&path, None::<&str>).map_err(|e| e.to_string())
     }
 
     /// Read a file and return its content.
@@ -579,6 +599,8 @@ pub fn run() {
     builder
         .plugin(tauri_plugin_log::Builder::new().build())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_opener::init())
         .plugin(open_file_plugin())
         .setup(|app| {
             log::info!("setup: initializing app");
@@ -615,17 +637,17 @@ pub fn run() {
                         app_handle.exit(0);
                     }
                     _ => {
-                        if let Some(window) = app_handle.get_webview_window("main") {
+                        // Find the focused window
+                        let window = app_handle.webview_windows().values().find(|w| w.is_focused().unwrap_or(false)).cloned();
+                        if let Some(window) = window {
                             match id {
                                 "print" => {
                                     let _ = window.eval(r#"
-                                        const filenameEl = document.getElementById('filename');
-                                        if (filenameEl && filenameEl.textContent) {
-                                            const baseName = filenameEl.textContent.replace(/\.[^.]+$/, '');
-                                            document.title = `${baseName}.pdf`;
-                                            document.body.dataset.filename = filenameEl.textContent;
+                                        if (typeof exportAndOpenPdf === 'function') {
+                                            exportAndOpenPdf();
+                                        } else {
+                                            console.error('exportAndOpenPdf not found');
                                         }
-                                        window.print();
                                     "#);
                                 }
                                 "file_open" => {
@@ -728,6 +750,9 @@ pub fn run() {
             commands::print_window,
             commands::open_file_new_window,
             commands::get_about_info,
+            commands::prepare_print_html,
+            commands::export_pdf,
+            commands::open_pdf,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
