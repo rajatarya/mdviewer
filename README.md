@@ -23,24 +23,6 @@
 
 ---
 
-## Latest Release: v1.8.0
-
-**Released 2026-08-28**
-
-- Printing support with system print dialog, Cmd+P shortcut, and print-optimized styling
-- 0.5in margins, blank header, footer with filename and page numbers `Page [x/y]`
-- File → Print menu item via Tauri MenuBuilder
-- App menu with About/Quit, File menu with Open/Export/Print/Close/Exit
-- View menu with Zoom In/Out/Actual Size/Toggle Theme
-- Dynamic Window menu listing open Markdown Viewer windows with Bring All to Front
-- About dialog shows version from Cargo.toml, Git SHA, and clickable Project Homepage link
-- Print button wired via Tauri `print_window` command mirroring Export pattern
-- All graphics/diagrams render in print preview
-
-See [Releases](https://github.com/rajatarya/mdviewer/releases) for the full changelog and download.
-
----
-
 ## Features
 
 | Category | Supported |
@@ -210,6 +192,11 @@ This app was designed and implemented entirely by AI coding agents.
 The initial implementation — every line of Rust, every CSS rule, every JavaScript function — was written by **[pi.dev](https://pi.dev)** using the **Qwen3.6-35B-A3B-GGUF:BF16** model by [Unsloth](http://unsloth.ai/) ([🤗 Hugging Face](https://huggingface.co/unsloth/Qwen3.6-35B-A3B-GGUF)), hosted locally via [llama.cpp](https://github.com/ggml-org/llama.cpp) on an M5 MacBook Pro (128 GB RAM).
 
 Subsequent fixes and architectural work — including the Tauri 2.x migration cleanup, the v1.4.0 macOS file-open deadlock investigation, and the frontmatter rendering redesign — were done by **[Claude](https://www.anthropic.com/claude)** (Anthropic), accessed through [Claude Code](https://claude.com/claude-code).
+
+**Commit attribution (as of v1.8.5):**
+- **pi.dev**: ~116 commits — Qwen3.6-35B-A3B-GGUF:BF16 (initial build and ongoing development)
+- **omp harness**: 16 commits — Muse-Glimmer-30B-Q4_K_M locally via LlamaBar on macOS Darwin 25.5.0 Apple M5 Max arm64
+- **Claude Code**: 3 commits — Claude Opus 4.7 (1M context)
 
 The result: a complete, tested, production-ready native macOS app — from zero to shipped — without a single human typing code.
 
