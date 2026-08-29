@@ -112,3 +112,7 @@ Generate a PDF server-side in Rust with filename in header/footer on every page,
 - 2026-08-28: Started Rust-side approach after CSS attempts failed.
 - 2026-08-28: Switched to WeasyPrint soft dependency with graceful fallback
 - 2026-08-28: Implemented WeasyPrint subprocess with fallback, TDD tests passing
+- 2026-08-28: Added Rust `open_pdf` command using `tauri_plugin_opener` to open exported PDF with system default viewer
+- 2026-08-28: Updated frontend Print button to call `export_pdf` then `open_pdf` via Tauri commands
+- 2026-08-28: Removed header from PDF footer, kept footer with filename and page numbers only
+- 2026-08-28: Updated README with optional `weasyprint` requirement

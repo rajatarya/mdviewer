@@ -1,5 +1,4 @@
 use std::path::Path;
-use std::fs::File;
 use std::io::Write;
 use pulldown_cmark::{Parser, Options, html::push_html};
 use std::process::Command;

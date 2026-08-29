@@ -687,6 +687,28 @@
   const exportBtn = document.getElementById('export-btn');
   const printBtn = document.getElementById('print-btn');
   const themeBtn = document.getElementById('theme-btn');
+
+  async function exportAndOpenPdf() {
+    console.log('[mdviewer] exportAndOpenPdf called');
+    const { invoke } = window.__TAURI__.core;
+    const filename = filenameEl.textContent || 'document.md';
+    let markdown = currentContent;
+    if (currentFilePath && !markdown) {
+      markdown = await invoke('read_file', { path: currentFilePath });
+    }
+    if (!markdown) {
+      throw new Error('No markdown content available');
+    }
+    const pdfPath = await invoke('export_pdf', { markdown, filename });
+    console.log('[mdviewer] PDF exported to', pdfPath);
+    try {
+      console.log('[mdviewer] Attempting open_pdf command with path', pdfPath);
+      await invoke('open_pdf', { path: pdfPath });
+      console.log('[mdviewer] open_pdf succeeded');
+    } catch (openErr) {
+      console.error('open_pdf failed', openErr);
+    }
+  }
   const openBtn = document.getElementById('open-btn');
   const fileInput = document.getElementById('file-input');
 
@@ -763,31 +785,16 @@
     if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'p') {
       e.preventDefault();
       if (printBtn && printBtn.style.display !== 'none') {
-        // Use Rust backend to generate print-ready HTML
+        // Export PDF via backend
         (async () => {
           try {
-            const markdownHtml = document.getElementById('content')?.innerHTML || document.body.innerHTML;
-            const filename = filenameEl.textContent || 'document.md';
-            const printHtml = await window.__TAURI__.core.invoke('prepare_print_html', { markdownHtml, filename });
-            const printWindow = window.open('', '_blank');
-            if (printWindow) {
-              printWindow.document.write(printHtml);
-              printWindow.document.close();
-              await printWindow.onload;
-              printWindow.print();
-              printWindow.close();
-              return;
+            if (typeof exportAndOpenPdf === 'function') {
+              await exportAndOpenPdf();
+            } else {
+              console.error('exportAndOpenPdf not found');
             }
           } catch (err) {
-            console.error('Prepare print HTML failed', err);
-          }
-          // Fallback
-          try {
-            const currentWindow = window.__TAURI__?.window?.getCurrent?.();
-            const label = currentWindow?.label ?? 'main';
-            window.__TAURI__.core.invoke('print_window', { label });
-          } catch {
-            window.print();
+            console.error('Export PDF via Cmd+P failed', err);
           }
         })();
       }
@@ -903,39 +910,12 @@
 
   /** Task 16: Print current markdown file. */
   printBtn.addEventListener('click', async () => {
+    console.log('[mdviewer] Print button clicked - handler attached');
     console.log('[mdviewer] Print button clicked', {filename: filenameEl.textContent, visible: printBtn.style.display});
-    // Use Rust backend to export PDF with filename header/footer
     try {
-      const { invoke } = window.__TAURI__.core;
-      const filename = filenameEl.textContent || 'document.md';
-      let markdown = currentContent;
-      if (currentFilePath && !markdown) {
-        markdown = await invoke('read_file', { path: currentFilePath });
-      }
-      if (!markdown) {
-        throw new Error('No markdown content available');
-      }
-      const pdfPath = await invoke('export_pdf', { markdown, filename });
-      console.log('[mdviewer] PDF exported to', pdfPath);
-      // Open PDF with default app
-      try {
-        await window.__TAURI__.shell.open(pdfPath);
-        console.log('[mdviewer] shell.open succeeded');
-      } catch (openErr) {
-        console.error('shell.open failed', openErr);
-      }
-      return;
+      await exportAndOpenPdf();
     } catch (e) {
       console.error('Export PDF failed', e);
-    }
-    // Fallback to direct print
-    try {
-      const currentWindow = window.__TAURI__?.window?.getCurrent?.();
-      const label = currentWindow?.label ?? 'main';
-      await window.__TAURI__.core.invoke('print_window', { label });
-    } catch (e) {
-      console.error('Print invoke failed', e);
-      window.print();
     }
   });
 
