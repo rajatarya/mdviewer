@@ -564,23 +564,6 @@
 
   /* Toolbar — hide/show based on whether a file is loaded */
 
-  /* Print footer - hidden on screen, shown in print */
-  .print-footer {
-    position: fixed;
-    bottom: 0.25in;
-    left: 0;
-    right: 0;
-    text-align: center;
-    font-size: 9pt;
-    color: #333;
-    padding: 6pt 0;
-    border-top: 1px solid #ccc;
-    display: none;
-  }
-  .print-footer::before {
-    content: attr(data-filename);
-  }
-
   /* Print styles */
   @media print {
     :root {
@@ -634,16 +617,28 @@
     h1, h2, h3 {
       page-break-after: avoid;
     }
-        /* Footer with filename and page number */
+    /* Footer with filename and page number */
     @page {
-      margin: 0.5in 0.5in 1.25in 0.5in;
+      margin: 0.5in;
       @bottom-center {
         content: "Page " counter(page);
         font-size: 9pt;
         color: #333;
       }
     }
+    /* Fixed footer for print */
     .print-footer {
+      position: fixed;
+      bottom: 0.6in;
+      left: 0.5in;
+      right: 0.5in;
+      text-align: center;
+      font-size: 9pt;
+      color: #333;
+      display: block;
+    }
+    .print-footer::before {
+      content: attr(data-filename);
       display: block;
     }
   }
@@ -655,6 +650,7 @@
   <button id="open-btn" title="Open file">📂 Open</button>
   <span class="filename" id="filename" style="display:none"></span>
   <span class="title" id="app-title">Markdown Viewer</span>
+  <button id="export-btn" title="Export as HTML" style="display:none">💾 Export</button>
   <button id="print-btn" title="Print" style="display:none">🖨️ Print</button>
   <button id="theme-btn" title="Toggle theme">🌙</button>
   <div class="zoom-group">
@@ -683,30 +679,9 @@
 
   const preview = document.getElementById('preview');
   const filenameEl = document.getElementById('filename');
+  const exportBtn = document.getElementById('export-btn');
   const printBtn = document.getElementById('print-btn');
   const themeBtn = document.getElementById('theme-btn');
-
-  async function exportAndOpenPdf() {
-    console.log('[mdviewer] exportAndOpenPdf called');
-    const { invoke } = window.__TAURI__.core;
-    const filename = filenameEl.textContent || 'document.md';
-    let markdown = currentContent;
-    if (currentFilePath && !markdown) {
-      markdown = await invoke('read_file', { path: currentFilePath });
-    }
-    if (!markdown) {
-      throw new Error('No markdown content available');
-    }
-    const pdfPath = await invoke('export_pdf', { markdown, filename });
-    console.log('[mdviewer] PDF exported to', pdfPath);
-    try {
-      console.log('[mdviewer] Attempting open_pdf command with path', pdfPath);
-      await invoke('open_pdf', { path: pdfPath });
-      console.log('[mdviewer] open_pdf succeeded');
-    } catch (openErr) {
-      console.error('open_pdf failed', openErr);
-    }
-  }
   const openBtn = document.getElementById('open-btn');
   const fileInput = document.getElementById('file-input');
 
@@ -783,18 +758,20 @@
     if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'p') {
       e.preventDefault();
       if (printBtn && printBtn.style.display !== 'none') {
-        // Export PDF via backend
-        (async () => {
-          try {
-            if (typeof exportAndOpenPdf === 'function') {
-              await exportAndOpenPdf();
-            } else {
-              console.error('exportAndOpenPdf not found');
-            }
-          } catch (err) {
-            console.error('Export PDF via Cmd+P failed', err);
-          }
-        })();
+        document.body.dataset.filename = filenameEl.textContent || '';
+        const footer = document.querySelector('.print-footer');
+        if (footer) footer.dataset.filename = filenameEl.textContent || '';
+        if (filenameEl.textContent) {
+          const baseName = filenameEl.textContent.replace(/\.[^.]+$/, '');
+          document.title = `${baseName}.pdf`;
+        }
+        try {
+          const currentWindow = window.__TAURI__?.window?.getCurrent?.();
+          const label = currentWindow?.label ?? 'main';
+          window.__TAURI__.core.invoke('print_window', { label });
+        } catch {
+          window.print();
+        }
       }
       return;
     }
@@ -861,6 +838,7 @@
       openBtn.style.display = 'none';
       filenameEl.style.display = 'inline';
       document.getElementById('app-title').style.display = 'none';
+      exportBtn.style.display = 'inline';
       document.getElementById('print-btn').style.display = 'inline';
 
       // Start file watching for live updates (Task 14)
@@ -877,14 +855,55 @@
     }
   }
 
+  /** Task 15: Export current content as a standalone HTML file. */
+  exportBtn.addEventListener('click', async () => {
+    if (!currentContent) return;
+    try {
+      const title = filenameEl.textContent || 'export';
+      // Use Tauri 2.x dialog plugin via invoke
+      // In Tauri 2.x, plugin commands use the format "plugin:<name>|<command>"
+      const outputPath = await invoke('plugin:dialog|save', {
+        options: {
+          title: 'Export HTML',
+          filters: [{ name: 'HTML', extensions: ['html'] }],
+          defaultPath: title + '.html',
+        },
+      });
+      if (!outputPath) return; // user cancelled
+      await invoke('export_html', {
+        content: currentContent,
+        outputPath: outputPath,
+        title: title,
+      });
+      preview.innerHTML = `<p style="color:green">✅ Exported to ${outputPath.split('/').pop()}</p>`;
+      setTimeout(() => doRender(currentContent), 1500);
+    } catch (err) {
+      console.error('Export failed:', err);
+      preview.innerHTML = `<p style="color:red">Export failed: ${err}</p>`;
+    }
+  });
+
   /** Task 16: Print current markdown file. */
   printBtn.addEventListener('click', async () => {
-    console.log('[mdviewer] Print button clicked - handler attached');
     console.log('[mdviewer] Print button clicked', {filename: filenameEl.textContent, visible: printBtn.style.display});
+    // Ensure filename is set for print CSS
+    if (filenameEl.textContent) {
+      document.body.dataset.filename = filenameEl.textContent;
+      const footer = document.querySelector('.print-footer');
+      if (footer) footer.dataset.filename = filenameEl.textContent;
+      const baseName = filenameEl.textContent.replace(/\.[^.]+$/, '');
+      document.title = `${baseName}.pdf`;
+    }
+    // Use Tauri command to trigger print reliably, mirroring Export pattern
     try {
-      await exportAndOpenPdf();
+      // Get current window label via Tauri API
+      const currentWindow = window.__TAURI__?.window?.getCurrent?.();
+      const label = currentWindow?.label ?? 'main';
+      await window.__TAURI__.core.invoke('print_window', { label });
     } catch (e) {
-      console.error('Export PDF failed', e);
+      console.error('Print invoke failed', e);
+      // Fallback to direct print
+      window.print();
     }
   });
 
@@ -935,6 +954,7 @@
     openBtn.style.display = 'none';
     filenameEl.style.display = 'inline';
     document.getElementById('app-title').style.display = 'none';
+    exportBtn.style.display = 'inline';
 
     await doRender(content);
   }
@@ -1314,6 +1334,6 @@
 
   init();
 </script>
-<div class="print-footer" id="print-footer"></div>
+<div class="print-footer" data-filename=""></div>
 </body>
 </html>
