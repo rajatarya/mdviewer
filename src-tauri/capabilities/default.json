@@ -10,7 +10,8 @@
     "dialog:default",
     "dialog:allow-save",
     "shell:allow-open",
-    "opener:default"
+    "opener:default",
+    "core:event:allow-listen"
   ],
   "capabilities": [
     {

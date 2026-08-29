@@ -106,9 +106,6 @@ mod commands {
             .id("file_open")
             .accelerator("CmdOrCtrl+O")
             .build(app)?;
-        let export_item = tauri::menu::MenuItemBuilder::new("Export…")
-            .id("file_export")
-            .build(app)?;
         let print_item = tauri::menu::MenuItemBuilder::new("Print…")
             .id("print")
             .accelerator("CmdOrCtrl+P")
@@ -124,7 +121,6 @@ mod commands {
 
         let file_menu = tauri::menu::SubmenuBuilder::new(app, "File")
             .item(&open_item)
-            .item(&export_item)
             .separator()
             .item(&print_item)
             .separator()
